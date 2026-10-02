@@ -1,0 +1,66 @@
+# Ambientes virtuais Python
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Bytecode e caches Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Variáveis de ambiente e segredos
+.env
+.env.local
+.env.*.local
+*.env
+!*.env.example
+
+# Bancos de dados locais / temporários
+*.duckdb
+*.duckdb.wal
+*.db
+*.sqlite
+*.sqlite3
+
+# Dados brutos (manter pastas com .gitkeep se desejar)
+data/raw/*
+!data/raw/.gitkeep
+
+# Arquivos de dados pesados / temporários
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.zip
+*.tar.gz
+*.rar
+
+# Dados processados (descomente abaixo se não quiser versionar os arquivos parquet gerados)
+# data/processed/*
+# !data/processed/.gitkeep
+
+# IDEs e editores de texto
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
