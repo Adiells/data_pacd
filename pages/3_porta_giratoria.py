@@ -163,6 +163,7 @@ df_tabela_filtrada = df_tabela[df_tabela["taxa_retorno"] >= margem_minima].copy(
 colunas_exibicao = {
     "nome_candidato": "Nome do Candidato",
     "sigla_partido": "Partido",
+    "uf_candidato": "UF",
     "nome_doador": "Nome do Doador",
     "cnpj_basico_vinculado": "CNPJ Básico Vinculado",
     "valor_receita": "Valor Doado (R$)",
@@ -172,7 +173,10 @@ colunas_exibicao = {
     "razao_social_empresa": "Razão Social da Empresa",
 }
 
-tabela_final = df_tabela_filtrada[list(colunas_exibicao.keys())].rename(columns=colunas_exibicao)
+# Garante presença de uf_candidato se existir
+colunas_presentes = [c for c in colunas_exibicao.keys() if c in df_tabela_filtrada.columns]
+tabela_final = df_tabela_filtrada[colunas_presentes].rename(columns={c: colunas_exibicao[c] for c in colunas_presentes})
+
 
 st.dataframe(
     tabela_final,

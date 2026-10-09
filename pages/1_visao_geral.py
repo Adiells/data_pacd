@@ -21,6 +21,8 @@ st.set_page_config(
 )
 
 from src.data_loader import carregar_dados
+from src.geo import gerar_heatmap_brasil
+from src.metrics import analise_origem_recursos
 from src.ui_components import (
     anonimizar_documento,
     formatar_moeda,
@@ -134,7 +136,140 @@ with col_kpi4:
 st.markdown("---")
 
 # ==============================================================================
-# SEÇÃO 2: GRÁFICOS INTERATIVOS COM PLOTLY
+# SEÇÃO 2: PANORAMA FEDERATIVO E MAPA DE CALOR DO BRASIL (HEATMAP)
+# ==============================================================================
+st.subheader("🗺️ Panorama Federativo e Mapa de Calor do Brasil (Heatmap)")
+st.caption(
+    "Distribuição geoespacial e densidade do financiamento político nas 27 Unidades Federativas."
+)
+
+col_ctrl_mapa1, col_ctrl_mapa2 = st.columns([2, 1])
+with col_ctrl_mapa1:
+    opcao_metrica = st.radio(
+        "Métrica do Heatmap Geográfico:",
+        options=[
+            "💰 Volume Arrecadado (R$)",
+            "👥 Quantidade de Candidatos",
+            "🤝 Doadores Únicos (CPFs)",
+            "🗳️ Custo Mediano do Voto (R$/voto)",
+        ],
+        horizontal=True,
+    )
+
+mapa_metricas = {
+    "💰 Volume Arrecadado (R$)": "total_arrecadado",
+    "👥 Quantidade de Candidatos": "total_candidatos",
+    "🤝 Doadores Únicos (CPFs)": "total_doadores",
+    "🗳️ Custo Mediano do Voto (R$/voto)": "custo_mediano_voto",
+}
+chave_metrica = mapa_metricas[opcao_metrica]
+
+col_mapa, col_grafs = st.columns([1.35, 1])
+
+with col_mapa:
+    fig_heatmap = gerar_heatmap_brasil(df_filtrado, metrica=chave_metrica, altura=520)
+    st.plotly_chart(fig_heatmap, use_container_width=True)
+
+with col_grafs:
+    uf_filtro = st.session_state.get("filtro_uf", "Todas as UFs (Brasil)")
+    if uf_filtro == "Todas as UFs (Brasil)":
+        st.markdown("##### 📊 Ranking Federativo (Top Estados)")
+        volume_ufs = (
+            df_filtrado.groupby("uf_candidato", as_index=False)["valor_receita"]
+            .sum()
+            .rename(columns={"valor_receita": "total_uf"})
+            .sort_values(by="total_uf", ascending=True)
+            .tail(7)
+        )
+        if not volume_ufs.empty:
+            fig_ufs = px.bar(
+                volume_ufs,
+                x="total_uf",
+                y="uf_candidato",
+                orientation="h",
+                color="total_uf",
+                color_continuous_scale="Blues",
+                labels={"total_uf": "Volume Arrecadado (R$)", "uf_candidato": "UF"},
+            )
+            fig_ufs.update_layout(
+                coloraxis_showscale=False,
+                margin=dict(l=10, r=20, t=5, b=20),
+                height=215,
+                xaxis=dict(title=""),
+                yaxis=dict(title=""),
+            )
+            fig_ufs.update_traces(
+                hovertemplate="<b>UF: %{y}</b><br>Arrecadação: R$ %{x:,.2f}<extra></extra>"
+            )
+            st.plotly_chart(fig_ufs, use_container_width=True)
+    else:
+        st.markdown(f"##### 📍 Partidos no Estado ({uf_filtro})")
+        volume_partidos = (
+            df_filtrado.groupby("sigla_partido", as_index=False)["valor_receita"]
+            .sum()
+            .rename(columns={"valor_receita": "total_partido"})
+            .sort_values(by="total_partido", ascending=True)
+            .tail(7)
+        )
+        if not volume_partidos.empty:
+            fig_part = px.bar(
+                volume_partidos,
+                x="total_partido",
+                y="sigla_partido",
+                orientation="h",
+                color="total_partido",
+                color_continuous_scale="Teal",
+                labels={"total_partido": "Volume Arrecadado (R$)", "sigla_partido": "Partido"},
+            )
+            fig_part.update_layout(
+                coloraxis_showscale=False,
+                margin=dict(l=10, r=20, t=5, b=20),
+                height=215,
+                xaxis=dict(title=""),
+                yaxis=dict(title=""),
+            )
+            fig_part.update_traces(
+                hovertemplate="<b>%{y}</b><br>Volume: R$ %{x:,.2f}<extra></extra>"
+            )
+            st.plotly_chart(fig_part, use_container_width=True)
+
+    st.markdown("##### 🏛️ Composição por Origem do Recurso")
+    df_origem_visao = analise_origem_recursos(df_filtrado)
+    if not df_origem_visao.empty:
+        df_origem_sorted = df_origem_visao.sort_values("total_arrecadado", ascending=True)
+        fig_origem_bar = px.bar(
+            df_origem_sorted,
+            x="total_arrecadado",
+            y="tipo_receita",
+            orientation="h",
+            color="tipo_receita",
+            color_discrete_map={
+                "Dinheiro Público": "#2563EB",
+                "Financiamento Privado": "#10B981",
+                "Repasse entre Aliados": "#F59E0B",
+            },
+            text=df_origem_sorted.apply(
+                lambda r: f"R$ {r['total_arrecadado']:,.0f} ({r['percentual']:.1f}%)".replace(",", "X").replace(".", ",").replace("X", "."),
+                axis=1,
+            ),
+        )
+        fig_origem_bar.update_traces(
+            textposition="outside",
+            hovertemplate="<b>%{y}</b><br>Volume: R$ %{x:,.2f}<extra></extra>",
+        )
+        fig_origem_bar.update_layout(
+            showlegend=False,
+            margin=dict(l=10, r=40, t=5, b=20),
+            height=215,
+            xaxis=dict(title=""),
+            yaxis=dict(title=""),
+        )
+        st.plotly_chart(fig_origem_bar, use_container_width=True)
+
+st.markdown("---")
+
+# ==============================================================================
+# SEÇÃO 3: RANKINGS TOP 10 DOADORES E CANDIDATOS
 # ==============================================================================
 
 # Layout de duas colunas para os Top 10 Doadores e Top 10 Candidatos

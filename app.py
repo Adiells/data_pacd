@@ -49,7 +49,7 @@ st.markdown(
             ⚡ Engine DuckDB + Parquet
         </span>
         <span style="background: #FEF3C7; color: #B45309; padding: 0.3rem 0.8rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 600;">
-            📍 Recorte Estadual (PB)
+            📍 Cobertura Nacional (27 UFs)
         </span>
         <span style="background: #F3F4F6; color: #374151; padding: 0.3rem 0.8rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 600;">
             📅 Cobertura: 2018 a 2024
@@ -112,11 +112,11 @@ with col_left:
         1. **Concentração Oligárquica:** Até que ponto o capital eleitoral é monopolizado
            por um grupo restrito de candidaturas de elite?
         2. **Retorno do Investimento:** Qual é o custo financeiro real de cada voto obtido
-           pelos candidatos em diferentes cargos?
+           pelos candidatos em diferentes cargos e unidades da federação?
         3. **Relações de Conflito de Interesse:** Há repasses diretos de campanhas a
            fornecedores que atuaram concomitantemente como financiadores (*porta giratória*)?
-        4. **Geopolítica do Financiamento:** Quais municípios e regiões exportam ou importam
-           capital de campanha eleitoral?
+        4. **Origem dos Fundos & Autofinanciamento:** Qual o peso real dos fundos públicos
+           frente ao aporte próprio de candidatos de alto patrimônio?
         """
     )
 
@@ -130,25 +130,27 @@ with col_right:
           potência acentuada, com desvio padrão expressivamente maior que a mediana.
         * **H3 — Efeito Porta Giratória:** Parte relevante dos recursos declarados retorna
           para a mesma pessoa física/jurídica sob a rubrica de prestação de serviços.
-        * **H4 — Endogeneidade Geográfica:** Campanhas municipais são fortemente
-          autofinanciadas por capital local, enquanto pleitos majoritários atraem capital exógeno.
+        * **H4 — Disparidades Federativas:** O custo de viabilidade política varia drasticamente
+          entre os estados da federação e portes de município.
+        * **H5 — Vantagem do Autofinanciamento:** O aporte de recursos próprios cria uma barreira
+          competitiva contra candidatos dependentes de repasses partidários.
         """
     )
 
 st.markdown("---")
 
-# Guia de Navegação
+# Guia de Navegação (4 Módulos)
 st.markdown("### 🧭 Módulos Disponíveis para Navegação")
-nav1, nav2, nav3 = st.columns(3)
+nav1, nav2, nav3, nav4 = st.columns(4)
 
 with nav1:
     st.markdown(
         """
-        <div style="padding: 1.2rem; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; min-height: 180px;">
+        <div style="padding: 1.2rem; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; min-height: 200px;">
             <h4 style="margin: 0 0 0.5rem 0; color: #1E293B;">📊 1. Visão Geral</h4>
-            <p style="margin: 0; color: #64748B; font-size: 0.9rem;">
-                Explore macroindicadores, maiores doadores com CPF anonimizado, candidatos recordistas
-                e a distribuição de capital em escala logarítmica.
+            <p style="margin: 0; color: #64748B; font-size: 0.85rem;">
+                Panorama macroeconômico, concentração por estado, ranking de doadores e candidatos,
+                e distribuição em escala logarítmica.
             </p>
         </div>
         """,
@@ -160,11 +162,11 @@ with nav1:
 with nav2:
     st.markdown(
         """
-        <div style="padding: 1.2rem; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; min-height: 180px;">
+        <div style="padding: 1.2rem; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; min-height: 200px;">
             <h4 style="margin: 0 0 0.5rem 0; color: #1E293B;">🗳️ 2. Custo do Voto (H1)</h4>
-            <p style="margin: 0; color: #64748B; font-size: 0.9rem;">
-                Investigue o piso de viabilidade eleitoral (teto de vidro), sumário estatístico e dispersão
-                votos vs. receita com teste de significância.
+            <p style="margin: 0; color: #64748B; font-size: 0.85rem;">
+                Investigue o piso de viabilidade eleitoral (teto de vidro), disparidades interestaduais
+                e dispersão votos vs. receita com teste estatístico.
             </p>
         </div>
         """,
@@ -176,9 +178,9 @@ with nav2:
 with nav3:
     st.markdown(
         """
-        <div style="padding: 1.2rem; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; min-height: 180px;">
-            <h4 style="margin: 0 0 0.5rem 0; color: #1E293B;">🔄 3. Porta Giratória (H2/H3)</h4>
-            <p style="margin: 0; color: #64748B; font-size: 0.9rem;">
+        <div style="padding: 1.2rem; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; min-height: 200px;">
+            <h4 style="margin: 0 0 0.5rem 0; color: #1E293B;">🔄 3. Porta Giratória (H3)</h4>
+            <p style="margin: 0; color: #64748B; font-size: 0.85rem;">
                 Rastreie o retorno de doações via contratação de fornecedores (QSA / CNPJ Básico)
                 com Diagrama Sankey e taxas de retorno.
             </p>
@@ -189,5 +191,22 @@ with nav3:
     if st.button("Acessar Porta Giratória ➡️", key="btn_nav_3", use_container_width=True):
         st.switch_page("pages/3_porta_giratoria.py")
 
+with nav4:
+    st.markdown(
+        """
+        <div style="padding: 1.2rem; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; min-height: 200px;">
+            <h4 style="margin: 0 0 0.5rem 0; color: #1E293B;">🏦 4. Origem & Aporte</h4>
+            <p style="margin: 0; color: #64748B; font-size: 0.85rem;">
+                Repartição entre Dinheiro Público, Privado e Aliados, histórico temporal
+                e ranking dos maiores autofinanciadores da política.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("Acessar Origem ➡️", key="btn_nav_4", use_container_width=True):
+        st.switch_page("pages/4_origem_e_autofinanciamento.py")
+
 st.markdown("---")
 st.caption("💡 Os filtros selecionados na barra lateral permanecem ativos durante a navegação entre todas as páginas.")
+

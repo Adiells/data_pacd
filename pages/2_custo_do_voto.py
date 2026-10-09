@@ -74,7 +74,7 @@ with col_f1:
     )
 
 # Cargos válidos para o ano escolhido (evita cruzar cargos municipais com anos federais)
-df_ano = df_completo[df_completo["ano"] == ano_selecionado]
+df_ano = df_completo[df_completo["ano"].astype(str) == str(ano_selecionado)]
 cargos_validos = sorted([c for c in df_ano["cargo"].dropna().unique() if c])
 
 # Recupera cargo pré-selecionado do session_state
@@ -90,13 +90,19 @@ with col_f2:
         "Cargo em Disputa",
         options=cargos_validos,
         index=cargo_padrao_idx,
-        help="Cargos disputados na eleição selecionada no estado da Paraíba.",
+        help="Cargos disputados na eleição selecionada no recorte geográfico.",
     )
 
-# Filtragem do dataset base para o recorte específico
-df_recorte = df_completo[
-    (df_completo["ano"] == ano_selecionado) & (df_completo["cargo"] == cargo_selecionado)
-].copy()
+# Filtragem do dataset base para o recorte específico com suporte a filtro de UF
+uf_filtro = st.session_state.get("filtro_uf", "Todas as UFs (Brasil)")
+filtro_base = (
+    (df_completo["ano"].astype(str) == str(ano_selecionado))
+    & (df_completo["cargo"].astype(str).str.upper() == str(cargo_selecionado).upper())
+)
+if uf_filtro != "Todas as UFs (Brasil)" and "uf_candidato" in df_completo.columns:
+    filtro_base = filtro_base & (df_completo["uf_candidato"].astype(str).str.upper() == uf_filtro.upper())
+
+df_recorte = df_completo[filtro_base].copy()
 
 if df_recorte.empty:
     st.warning("⚠️ Não foram encontrados registros para o recorte selecionado.")

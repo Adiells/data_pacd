@@ -65,6 +65,9 @@ def inicializar_session_state(df: Optional[pd.DataFrame] = None) -> None:
     if "filtro_anos" not in st.session_state:
         st.session_state["filtro_anos"] = listar_anos()
 
+    if "filtro_uf" not in st.session_state:
+        st.session_state["filtro_uf"] = "Todas as UFs (Brasil)"
+
     if "filtro_cargos" not in st.session_state:
         st.session_state["filtro_cargos"] = listar_cargos()
 
@@ -84,12 +87,14 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame filtrado conforme seleção ativa nos controles.
     """
+    from src.data_loader import listar_ufs, listar_tipos_receita
+
     inicializar_session_state(df)
 
-    # Chamada sem argumentos evita recálculo e hashing redundante do DataFrame completo
     todos_anos = listar_anos()
     todos_cargos = listar_cargos()
     todos_partidos = listar_partidos()
+    todas_ufs = ["Todas as UFs (Brasil)"] + listar_ufs()
 
     with st.sidebar:
         st.markdown(
@@ -97,7 +102,7 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             <div style="text-align: center; margin-bottom: 1.5rem;">
                 <h2 style="margin: 0; color: #1E3A8A;">🗳️ Observatório Eleitoral</h2>
                 <span style="font-size: 0.85rem; color: #64748B;">
-                    Análise Empírica do Financiamento Político
+                    Análise Empírica do Financiamento Político no Brasil (27 UFs)
                 </span>
             </div>
             """,
@@ -107,8 +112,9 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         with st.expander("📌 Sobre o Projeto", expanded=False):
             st.markdown(
                 """
-                Plataforma analítica para investigar a mecânica, custos e influências
-                do financiamento de campanhas eleitorais na Paraíba (base TSE + QSA).
+                Plataforma analítica nacional para investigar a mecânica, custos e influências
+                do financiamento de campanhas eleitorais em todo o Brasil (27 UFs, 2018 a 2024,
+                cruzamento TSE + QSA + Fornecedores).
                 """
             )
 
@@ -116,8 +122,9 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             st.markdown(
                 """
                 * Qual o impacto real do volume financeiro no sucesso eleitoral?
-                * Como o capital de campanha se distribui entre os candidatos?
-                * Há evidências de sobreposição entre doadores e fornecedores contratados?
+                * Como o capital de campanha se distribui entre os estados e partidos?
+                * Há sobreposição entre doadores e fornecedores contratados (porta giratória)?
+                * Qual o peso do autofinanciamento e dos fundos públicos?
                 """
             )
 
@@ -127,19 +134,31 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 * **H1 (Plutocracia):** Top 10% mais financiados concentram vitórias.
                 * **H2 (Concentração):** Distribuição segue lei de potência assimétrica.
                 * **H3 (Porta Giratória):** Recursos de campanha retornam a doadores/fornecedores.
-                * **H4 (Geografia):** Campanhas municipais são dependentes de capital local.
+                * **H4 (Geografia & Federalismo):** Disparidades de custo de voto entre UFs.
+                * **H5 (Autofinanciamento):** Investimento do próprio bolso alavanca viabilidade.
                 """
             )
 
         st.markdown("---")
         st.subheader("🔍 Filtros Globais")
 
+        # 1. Filtro de UF (Visão Nacional ou Estado Específico)
+        uf_atual = st.session_state.get("filtro_uf", "Todas as UFs (Brasil)")
+        idx_uf = todas_ufs.index(uf_atual) if uf_atual in todas_ufs else 0
+        uf_selecionada = st.selectbox(
+            "📍 Âmbito Geográfico (UF)",
+            options=todas_ufs,
+            index=idx_uf,
+            help="Selecione 'Todas as UFs (Brasil)' para a visão nacional ou um estado específico.",
+        )
+        st.session_state["filtro_uf"] = uf_selecionada
+
         # Sanitização dos defaults para evitar falhas caso a lista de opções mude
         def_anos = [a for a in st.session_state["filtro_anos"] if a in todos_anos]
         def_cargos = [c for c in st.session_state["filtro_cargos"] if c in todos_cargos]
         def_partidos = [p for p in st.session_state["filtro_partidos"] if p in todos_partidos]
 
-        # Filtro de Ano
+        # 2. Filtro de Ano
         anos_selecionados = st.multiselect(
             "Ano da Eleição",
             options=todos_anos,
@@ -148,7 +167,7 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         )
         st.session_state["filtro_anos"] = anos_selecionados
 
-        # Filtro de Cargo
+        # 3. Filtro de Cargo
         cargos_selecionados = st.multiselect(
             "Cargo em Disputa",
             options=todos_cargos,
@@ -157,7 +176,7 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         )
         st.session_state["filtro_cargos"] = cargos_selecionados
 
-        # Filtro de Partido
+        # 4. Filtro de Partido
         partidos_selecionados = st.multiselect(
             "Partido Político",
             options=todos_partidos,
@@ -171,6 +190,7 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         with col_btn1:
             if st.button("Selecionar Todos", use_container_width=True):
                 st.session_state["filtro_anos"] = todos_anos
+                st.session_state["filtro_uf"] = "Todas as UFs (Brasil)"
                 st.session_state["filtro_cargos"] = todos_cargos
                 st.session_state["filtro_partidos"] = todos_partidos
                 st.rerun()
@@ -187,18 +207,29 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     # Aplicação dos filtros no DataFrame
     df_filtrado = df.copy()
 
+    # Filtro de UF
+    if uf_selecionada and uf_selecionada != "Todas as UFs (Brasil)":
+        if "uf_candidato" in df_filtrado.columns:
+            df_filtrado = df_filtrado[df_filtrado["uf_candidato"].astype(str).str.upper() == uf_selecionada.upper()]
+
+    # Filtro de Ano (compatível com string ou numérico)
     if anos_selecionados:
-        df_filtrado = df_filtrado[df_filtrado["ano"].isin(anos_selecionados)]
+        anos_str = [str(a) for a in anos_selecionados]
+        df_filtrado = df_filtrado[df_filtrado["ano"].astype(str).isin(anos_str)]
     else:
         df_filtrado = df_filtrado.iloc[0:0]
 
+    # Filtro de Cargo
     if cargos_selecionados:
-        df_filtrado = df_filtrado[df_filtrado["cargo"].isin(cargos_selecionados)]
+        cargos_limpos = [str(c).upper().strip() for c in cargos_selecionados]
+        df_filtrado = df_filtrado[df_filtrado["cargo"].astype(str).str.upper().str.strip().isin(cargos_limpos)]
     else:
         df_filtrado = df_filtrado.iloc[0:0]
 
+    # Filtro de Partido
     if partidos_selecionados:
-        df_filtrado = df_filtrado[df_filtrado["sigla_partido"].isin(partidos_selecionados)]
+        partidos_limpos = [str(p).upper().strip() for p in partidos_selecionados]
+        df_filtrado = df_filtrado[df_filtrado["sigla_partido"].astype(str).str.upper().str.strip().isin(partidos_limpos)]
     else:
         df_filtrado = df_filtrado.iloc[0:0]
 
@@ -207,7 +238,8 @@ def renderizar_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         percentual = (len(df_filtrado) / len(df) * 100.0) if len(df) > 0 else 0.0
         st.caption(
             f"📊 **{formatar_numero(len(df_filtrado))}** de **{formatar_numero(len(df))}** "
-            f"registros ({percentual:.1f}% da base)"
+            f"registros ({percentual:.1f}% da base nacional)"
         )
 
     return df_filtrado
+
