@@ -53,7 +53,13 @@ STATE_DRIVE_IDS: Dict[str, str] = {
     "TO": "1p6Eb7oVt3OQWcNxFNTFL9hCxns5T84Ip",
 }
 
-DEFAULT_OUTPUT_DIR = Path("data/raw/estados")
+# Estrutura oficial atualizada de pastas no Google Drive
+DRIVE_ROOT_FOLDER_ID = "1Zsmq6SOyHK7ZXvUFvYOiNGMZ0bmmKPLz"       # Raiz
+DRIVE_RAW_FOLDER_ID = "12oRUYQRDujlOiz6yW6P_yP5ZCsi1XuNP"        # Pasta 'raw/' contendo as 27 pastas de UFs
+DRIVE_DOCS_FOLDER_ID = "145he04R7oiK-8ITxbuSfbSnq9kJkMWab"       # Pasta 'docs/'
+DRIVE_PROCESSED_FOLDER_ID = "1_S9S2sB8oSO1cRW8grJpQvst-_0ANt4z"  # Pasta 'processed/'
+
+DEFAULT_OUTPUT_DIR = Path("data/raw")
 
 
 def baixar_arquivo_estado(
@@ -62,16 +68,35 @@ def baixar_arquivo_estado(
     output_dir: Path,
     force: bool = False,
     max_retries: int = 3,
+    estruturar_por_estado: bool = True,
 ) -> Path:
-    """Baixa o CSV de um estado específico com tratamento de confirmação do Google Drive."""
-    destino = output_dir / f"1_doacoes_empresas_{uf}.csv"
+    """Baixa o CSV de um estado específico, suportando a estrutura raw/{UF}/ do Drive ou plana.
 
-    if destino.exists() and destino.stat().st_size > 1024 and not force:
-        logger.info("[%s] Arquivo já existe (%d bytes). Pulando.", uf, destino.stat().st_size)
-        return destino
+    Verifica se o arquivo já existe em qualquer um dos formatos (aninhado ou plano)
+    antes de realizar a requisição de download.
+    """
+    if estruturar_por_estado:
+        destino = output_dir / uf / f"1_doacoes_empresas_{uf}.csv"
+    else:
+        destino = output_dir / f"1_doacoes_empresas_{uf}.csv"
 
+    # Checa existência em todas as estruturas conhecidas
+    locais_existentes = [
+        destino,
+        output_dir / f"1_doacoes_empresas_{uf}.csv",
+        output_dir / "estados" / f"1_doacoes_empresas_{uf}.csv",
+        Path("data/raw") / uf / f"1_doacoes_empresas_{uf}.csv",
+        Path("data/raw/estados") / f"1_doacoes_empresas_{uf}.csv",
+    ]
+
+    for local in locais_existentes:
+        if local.exists() and local.stat().st_size > 1024 and not force:
+            logger.info("[%s] Arquivo já existe em %s (%d bytes). Pulando download.", uf, local, local.stat().st_size)
+            return local
+
+    destino.parent.mkdir(parents=True, exist_ok=True)
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    logger.info("[%s] Baixando (ID: %s)...", uf, file_id)
+    logger.info("[%s] Baixando para %s (ID: %s)...", uf, destino, file_id)
 
     session = requests.Session()
     for tentativa in range(1, max_retries + 1):
@@ -91,7 +116,7 @@ def baixar_arquivo_estado(
                     if chunk:
                         f.write(chunk)
 
-            logger.info("[%s] Download finalizado: %d bytes.", uf, destino.stat().st_size)
+            logger.info("[%s] Download finalizado: %d bytes em %s.", uf, destino.stat().st_size, destino)
             return destino
 
         except Exception as exc:
@@ -106,17 +131,30 @@ def baixar_todos_os_estados(
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     max_workers: int = 5,
     force: bool = False,
+    estruturar_por_estado: bool = True,
 ) -> list[Path]:
     """Orquestra o download concorrente de todos os 27 estados."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("Iniciando download dos 27 estados em %s com %d workers...", output_dir, max_workers)
+    logger.info(
+        "Verificando/baixando 27 estados em %s (estruturado por UF: %s)...",
+        output_dir,
+        estruturar_por_estado,
+    )
 
     arquivos_baixados: list[Path] = []
     falhas: list[str] = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futuros = {
-            executor.submit(baixar_arquivo_estado, uf, fid, output_dir, force): uf
+            executor.submit(
+                baixar_arquivo_estado,
+                uf,
+                fid,
+                output_dir,
+                force,
+                3,
+                estruturar_por_estado,
+            ): uf
             for uf, fid in sorted(STATE_DRIVE_IDS.items())
         }
 

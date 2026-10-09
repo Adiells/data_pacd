@@ -31,13 +31,49 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Caminhos padrão do projeto
+DEFAULT_RAW_DIR = Path("data/raw")
 DEFAULT_ESTADOS_DIR = Path("data/raw/estados")
 DEFAULT_CSV_PATH = Path("data/raw/1_tabela_doacoes_empresas.csv")
 DEFAULT_PARQUET_PATH = Path("data/processed/base_consolidada_eleicoes.parquet")
 
 
+def localizar_csvs_estaduais(origem_dir: Optional[Path | str] = None) -> list[Path]:
+    """Localiza todos os CSVs dos 27 estados em estrutura aninhada (raw/{UF}/) ou plana (estados/).
+
+    Args:
+        origem_dir: Diretório opcional base de busca.
+
+    Returns:
+        list[Path]: Lista de arquivos CSV estaduais localizados e desduplicados.
+    """
+    pastas_busca: list[Path] = []
+    if origem_dir:
+        p_origem = Path(origem_dir)
+        if p_origem.exists():
+            pastas_busca.append(p_origem)
+
+    for padrao in [DEFAULT_RAW_DIR, DEFAULT_ESTADOS_DIR]:
+        if padrao.exists() and padrao not in pastas_busca:
+            pastas_busca.append(padrao)
+
+    candidatos: list[Path] = []
+    for pasta in pastas_busca:
+        # Busca recursiva cobrindo tanto subpastas (raw/{UF}/) quanto diretório plano
+        candidatos.extend(list(pasta.rglob("1_doacoes_empresas_*.csv")))
+
+    # Desduplica por nome de arquivo (ex: 1_doacoes_empresas_SP.csv)
+    vistos = set()
+    unicos: list[Path] = []
+    for arq in sorted(candidatos, key=lambda x: x.name):
+        if arq.name not in vistos and arq.stat().st_size > 0:
+            vistos.add(arq.name)
+            unicos.append(arq)
+
+    return unicos
+
+
 def converter_dados_para_parquet(
-    origem_dir: Optional[Path | str] = DEFAULT_ESTADOS_DIR,
+    origem_dir: Optional[Path | str] = None,
     arquivo_csv: Optional[Path | str] = None,
     destino_parquet: Path | str = DEFAULT_PARQUET_PATH,
     forcar_download: bool = False,
@@ -82,28 +118,34 @@ def converter_dados_para_parquet(
 
     # Identifica fonte de dados
     if arquivo_csv and Path(arquivo_csv).exists():
-        fonte_glob = str(arquivo_csv)
-        logger.info("Processando arquivo CSV único: %s", fonte_glob)
+        fonte_sql = f"'{Path(arquivo_csv).resolve()}'"
+        logger.info("Processando arquivo CSV único: %s", arquivo_csv)
     else:
-        origem = Path(origem_dir) if origem_dir else DEFAULT_ESTADOS_DIR
-        csvs_encontrados = list(origem.glob("1_doacoes_empresas_*.csv")) if origem.exists() else []
+        csvs_encontrados = localizar_csvs_estaduais(origem_dir)
 
         if forcar_download or len(csvs_encontrados) < 27:
-            logger.info("Base completa de 27 estados ausente ou incompleta. Iniciando download...")
-            baixar_todos_os_estados(output_dir=origem, force=forcar_download)
-            csvs_encontrados = list(origem.glob("1_doacoes_empresas_*.csv"))
+            logger.info(
+                "Base completa de 27 estados ausente ou incompleta (%d encontrados). Iniciando download...",
+                len(csvs_encontrados),
+            )
+            dir_download = Path(origem_dir) if origem_dir else DEFAULT_RAW_DIR
+            baixar_todos_os_estados(output_dir=dir_download, force=forcar_download)
+            csvs_encontrados = localizar_csvs_estaduais(origem_dir)
 
         if not csvs_encontrados:
             if DEFAULT_CSV_PATH.exists():
-                fonte_glob = str(DEFAULT_CSV_PATH)
-                logger.info("Utilizando arquivo CSV legado de fallback: %s", fonte_glob)
+                fonte_sql = f"'{DEFAULT_CSV_PATH.resolve()}'"
+                logger.info("Utilizando arquivo CSV legado de fallback: %s", DEFAULT_CSV_PATH)
             else:
                 raise FileNotFoundError(
-                    f"Nenhum arquivo CSV encontrado em '{origem}' nem em '{DEFAULT_CSV_PATH}'."
+                    f"Nenhum arquivo CSV encontrado em '{origem_dir}' nem em '{DEFAULT_RAW_DIR}'."
                 )
         else:
-            fonte_glob = str(origem / "1_doacoes_empresas_*.csv")
-            logger.info("Consolidando %d arquivos estaduais de: %s", len(csvs_encontrados), fonte_glob)
+            fonte_sql = str([str(p.resolve()) for p in csvs_encontrados])
+            logger.info(
+                "Consolidando %d arquivos estaduais (suporte a estrutura Drive raw/{UF}/ e estados/).",
+                len(csvs_encontrados),
+            )
 
     # Execução atômica via DuckDB
     temp_parquet = destino_parquet.with_suffix(f".tmp.{destino_parquet.name}")
@@ -112,7 +154,7 @@ def converter_dados_para_parquet(
     # Mapeamento dinâmico de colunas presentes para evitar Binder Errors em bases legadas
     colunas_existentes = set(
         con.execute(
-            f"DESCRIBE SELECT * FROM read_csv('{fonte_glob}', delim=';', header=True, all_varchar=True, ignore_errors=True) LIMIT 0"
+            f"DESCRIBE SELECT * FROM read_csv({fonte_sql}, delim=';', header=True, all_varchar=True, ignore_errors=True) LIMIT 0"
         )
         .df()["column_name"]
         .str.lower()
@@ -166,7 +208,7 @@ def converter_dados_para_parquet(
                 END AS tipo_receita
 
             FROM read_csv(
-                '{fonte_glob}',
+                {fonte_sql},
                 delim=';',
                 header=True,
                 all_varchar=True,

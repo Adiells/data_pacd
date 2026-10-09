@@ -48,7 +48,7 @@ Para baixar os CSVs brutos de todos os 27 estados da pasta oficial do Google Dri
 ```bash
 .venv/bin/python scripts/download_all_states.py
 ```
-*Os arquivos serão salvos em `data/raw/estados/1_doacoes_empresas_{UF}.csv`.*
+*Os arquivos são organizados na estrutura de subpastas por estado `data/raw/{UF}/1_doacoes_empresas_{UF}.csv` (espelhando a pasta `raw/` do Google Drive) ou no diretório `data/raw/estados/`.*
 
 ### Passo 3.2: Consolidação em Parquet Canônico via DuckDB
 Para consolidar os 27 CSVs brutos na base analítica única `data/processed/base_consolidada_eleicoes.parquet` em ~2 segundos:
