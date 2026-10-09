@@ -48,7 +48,10 @@ def calcular_custo_voto(df: pd.DataFrame) -> pd.DataFrame:
         "sigla_partido",
         "situacao",
     ]
-    colunas_obrigatorias = colunas_chave + ["total_votos"]
+    if "uf_candidato" in df.columns:
+        colunas_chave.append("uf_candidato")
+
+    colunas_obrigatorias = [c for c in colunas_chave if c != "uf_candidato"] + ["total_votos"]
     colunas_saida = colunas_chave + ["total_votos", "total_receita", "custo_voto"]
 
     if df.empty:
@@ -322,3 +325,144 @@ def correlacao_sucesso_financeiro(
         return 0.0
 
     return float(corr)
+
+
+def analise_origem_recursos(df: pd.DataFrame) -> pd.DataFrame:
+    """Calcula a distribuição percentual e total de recursos por origem.
+
+    Categorias: 'Dinheiro Público' (Fundo Partidário/FEFC), 'Financiamento Privado'
+    e 'Repasse entre Aliados'.
+
+    Args:
+        df: DataFrame com coluna 'tipo_receita' e 'valor_receita' (ou 'total_receita').
+
+    Returns:
+        pd.DataFrame: DataFrame contendo colunas ['tipo_receita', 'total_arrecadado',
+                      'total_doacoes', 'percentual'], ordenado pelo total.
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(f"Esperado pd.DataFrame, recebido {type(df).__name__}")
+
+    coluna_receita = "valor_receita" if "valor_receita" in df.columns else "total_receita"
+    if coluna_receita not in df.columns:
+        raise KeyError("Coluna de receita não encontrada.")
+
+    if df.empty or "tipo_receita" not in df.columns:
+        return pd.DataFrame(columns=["tipo_receita", "total_arrecadado", "total_doacoes", "percentual"])
+
+    df_calc = df.copy()
+    df_calc[coluna_receita] = pd.to_numeric(df_calc[coluna_receita], errors="coerce").fillna(0.0)
+
+    agrupado = (
+        df_calc.groupby("tipo_receita", as_index=False)
+        .agg(total_arrecadado=(coluna_receita, "sum"), total_doacoes=(coluna_receita, "count"))
+    )
+
+    total_geral = agrupado["total_arrecadado"].sum()
+    agrupado["percentual"] = np.where(
+        total_geral > 0,
+        (agrupado["total_arrecadado"] / total_geral) * 100.0,
+        0.0,
+    )
+
+    return agrupado.sort_values(by="total_arrecadado", ascending=False).reset_index(drop=True)
+
+
+def analise_autofinanciamento(df: pd.DataFrame) -> Dict[str, Any]:
+    """Calcula indicadores de autofinanciamento e aporte do próprio candidato.
+
+    Regra de negócio: 'autofinanciamento' == 1 indica que o candidato aportou
+    recursos próprios na campanha.
+
+    Args:
+        df: DataFrame com colunas 'autofinanciamento', 'valor_receita' e 'situacao'.
+
+    Returns:
+        dict: Indicadores consolidados de autofinanciamento.
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(f"Esperado pd.DataFrame, recebido {type(df).__name__}")
+
+    if df.empty or "autofinanciamento" not in df.columns:
+        return {
+            "taxa_autofinanciamento": 0.0,
+            "volume_autofinanciamento": 0.0,
+            "volume_terceiros": 0.0,
+            "total_operacoes_auto": 0,
+            "taxa_sucesso_auto": 0.0,
+            "taxa_sucesso_terceiros": 0.0,
+        }
+
+    coluna_receita = "valor_receita" if "valor_receita" in df.columns else "total_receita"
+    df_calc = df.copy()
+    df_calc[coluna_receita] = pd.to_numeric(df_calc[coluna_receita], errors="coerce").fillna(0.0)
+    df_calc["autofinanciamento"] = pd.to_numeric(df_calc["autofinanciamento"], errors="coerce").fillna(0).astype(int)
+
+    total_registros = len(df_calc)
+    taxa_auto = float(df_calc["autofinanciamento"].mean() * 100.0) if total_registros > 0 else 0.0
+
+    mask_auto = df_calc["autofinanciamento"] == 1
+    vol_auto = float(df_calc.loc[mask_auto, coluna_receita].sum())
+    vol_terceiros = float(df_calc.loc[~mask_auto, coluna_receita].sum())
+    total_ops = int(mask_auto.sum())
+
+    # Taxa de sucesso comparada
+    taxa_sucesso_auto = 0.0
+    taxa_sucesso_terceiros = 0.0
+    if "situacao" in df_calc.columns:
+        sit = df_calc["situacao"].fillna("").astype(str).str.lower()
+        eleito = (sit.str.contains("eleito") & ~sit.str.contains(r"n[aã]o[\s\-_]*eleito")).astype(int)
+        df_calc["eleito"] = eleito
+
+        if mask_auto.sum() > 0:
+            taxa_sucesso_auto = float(df_calc.loc[mask_auto, "eleito"].mean() * 100.0)
+        if (~mask_auto).sum() > 0:
+            taxa_sucesso_terceiros = float(df_calc.loc[~mask_auto, "eleito"].mean() * 100.0)
+
+    return {
+        "taxa_autofinanciamento": taxa_auto,
+        "volume_autofinanciamento": vol_auto,
+        "volume_terceiros": vol_terceiros,
+        "total_operacoes_auto": total_ops,
+        "taxa_sucesso_auto": taxa_sucesso_auto,
+        "taxa_sucesso_terceiros": taxa_sucesso_terceiros,
+    }
+
+
+def analise_custo_voto_por_uf(df: pd.DataFrame) -> pd.DataFrame:
+    """Calcula a mediana do custo por voto agrupada por Unidade Federativa (UF).
+
+    Args:
+        df: DataFrame contendo informações de candidatos, receitas e votos.
+
+    Returns:
+        pd.DataFrame: DataFrame ordenado com ['uf_candidato', 'mediana_custo_voto',
+                      'total_candidatos', 'total_votos', 'total_receita'].
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(f"Esperado pd.DataFrame, recebido {type(df).__name__}")
+
+    if df.empty or "uf_candidato" not in df.columns:
+        return pd.DataFrame(
+            columns=["uf_candidato", "mediana_custo_voto", "total_candidatos", "total_votos", "total_receita"]
+        )
+
+    cand = calcular_custo_voto(df) if "custo_voto" not in df.columns else df.copy()
+
+    # Filtra apenas quem teve votos para cálculo fidedigno da mediana
+    cand_positivos = cand[cand["custo_voto"] > 0]
+    if cand_positivos.empty:
+        cand_positivos = cand
+
+    agrupado = (
+        cand_positivos.groupby("uf_candidato", as_index=False)
+        .agg(
+            mediana_custo_voto=("custo_voto", "median"),
+            total_candidatos=("cpf_candidato", "nunique"),
+            total_votos=("total_votos", "sum"),
+            total_receita=("total_receita", "sum") if "total_receita" in cand_positivos.columns else ("valor_receita", "sum"),
+        )
+    )
+
+    return agrupado.sort_values(by="mediana_custo_voto", ascending=False).reset_index(drop=True)
+

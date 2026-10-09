@@ -124,6 +124,7 @@ def obter_dimensao_candidatos(df: Optional[pd.DataFrame] = None) -> pd.DataFrame
     chaves_candidato = [
         "cpf_candidato",
         "nome_candidato",
+        "uf_candidato",
         "cargo",
         "sigla_partido",
         "situacao",
@@ -233,11 +234,12 @@ def listar_partidos(df: Optional[pd.DataFrame] = None) -> list[str]:
 
 
 @st.cache_data
-def listar_ufs(df: Optional[pd.DataFrame] = None) -> list[str]:
-    """Retorna a lista ordenada das Unidades Federativas de doadores na base.
+def listar_ufs(df: Optional[pd.DataFrame] = None, campo: str = "uf_candidato") -> list[str]:
+    """Retorna a lista ordenada das Unidades Federativas presentes na base.
 
     Args:
         df: DataFrame opcional. Se omitido, carrega a base padrão via cache.
+        campo: Coluna de UF a consultar ('uf_candidato' ou 'sigla_uf_doador').
 
     Returns:
         list[str]: Lista de siglas de UF ordenadas alfabeticamente.
@@ -246,9 +248,10 @@ def listar_ufs(df: Optional[pd.DataFrame] = None) -> list[str]:
         df = carregar_dados()
 
     coluna_uf = None
-    for candidata in ["sigla_uf_doador", "uf_doador", "sigla_uf"]:
-        if candidata in df.columns:
-            coluna_uf = candidata
+    candidatas = [campo, "uf_candidato", "sigla_uf_doador", "uf_doador", "sigla_uf"]
+    for c in candidatas:
+        if c in df.columns:
+            coluna_uf = c
             break
 
     if coluna_uf is None or df[coluna_uf].empty:
@@ -261,5 +264,67 @@ def listar_ufs(df: Optional[pd.DataFrame] = None) -> list[str]:
         .str.strip()
         .str.upper()
     )
-    ufs_unicas = [uf for uf in ufs.unique() if uf]
+    ufs_unicas = [uf for uf in ufs.unique() if uf and uf not in ["NAN", "NONE", "N/A"]]
     return sorted(ufs_unicas)
+
+
+@st.cache_data
+def listar_tipos_receita(df: Optional[pd.DataFrame] = None) -> list[str]:
+    """Retorna os tipos de receita mapeados (Dinheiro Público, Privado, Aliados).
+
+    Args:
+        df: DataFrame opcional. Se omitido, carrega a base padrão via cache.
+
+    Returns:
+        list[str]: Lista ordenada de categorias de receita.
+    """
+    if df is None:
+        df = carregar_dados()
+
+    if "tipo_receita" not in df.columns or df["tipo_receita"].empty:
+        return ["Dinheiro Público", "Financiamento Privado", "Repasse entre Aliados"]
+
+    tipos = (
+        df["tipo_receita"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    tipos_unicos = [t for t in tipos.unique() if t]
+    return sorted(tipos_unicos)
+
+
+@st.cache_data
+def listar_municipios(
+    df: Optional[pd.DataFrame] = None,
+    uf: Optional[str] = None,
+) -> list[str]:
+    """Retorna a lista de municípios (disponível para eleições municipais 2020/2024).
+
+    Args:
+        df: DataFrame opcional. Se omitido, carrega a base padrão via cache.
+        uf: Sigla da UF opcional para filtrar os municípios.
+
+    Returns:
+        list[str]: Lista ordenada de nomes de municípios.
+    """
+    if df is None:
+        df = carregar_dados()
+
+    if "municipio_candidato" not in df.columns or df["municipio_candidato"].empty:
+        return []
+
+    sub_df = df
+    if uf and "uf_candidato" in df.columns and uf != "Todas":
+        sub_df = df[df["uf_candidato"].astype(str).str.upper() == str(uf).upper()]
+
+    muns = (
+        sub_df["municipio_candidato"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+    muns_unicos = [m for m in muns.unique() if m and m not in ["NAN", "NONE", "N/A"]]
+    return sorted(muns_unicos)
+
