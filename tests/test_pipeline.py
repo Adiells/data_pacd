@@ -19,7 +19,10 @@ from src.data_loader import (
     obter_dimensao_candidatos,
 )
 from src.metrics import (
+    analise_autofinanciamento,
+    analise_custo_voto_por_uf,
     analise_fluxo_geografico,
+    analise_origem_recursos,
     calcular_custo_voto,
     correlacao_sucesso_financeiro,
     identificar_porta_giratoria,
@@ -78,7 +81,7 @@ class TestDataLoader(unittest.TestCase):
         self.assertEqual(anos, sorted(anos))
 
         cargos = listar_cargos(self.df)
-        self.assertIn("prefeito", cargos)
+        self.assertTrue(any(c.upper() == "PREFEITO" for c in cargos))
         self.assertEqual(cargos, sorted(cargos))
 
         partidos = listar_partidos(self.df)
@@ -311,7 +314,79 @@ class TestMethodologyAuditorCriteria(unittest.TestCase):
         corr_spearman = correlacao_sucesso_financeiro(df, metodo="spearman")
         self.assertGreater(corr_spearman, 0.0)
 
+    def test_metricas_expansao_nacional(self) -> None:
+        """Testa as novas métricas de origem de recursos, autofinanciamento e custo por UF."""
+        df_exemplo = pd.DataFrame({
+            "tipo_receita": ["Dinheiro Público", "Financiamento Privado", "Dinheiro Público"],
+            "valor_receita": [1000.0, 500.0, 3000.0],
+            "autofinanciamento": [0, 1, 0],
+            "situacao": ["Não Eleito", "Eleito", "Eleito"],
+            "cpf_candidato": ["111", "222", "333"],
+            "nome_candidato": ["A", "B", "C"],
+            "uf_candidato": ["SP", "RJ", "SP"],
+            "cargo": ["PREFEITO", "PREFEITO", "PREFEITO"],
+            "sigla_partido": ["P1", "P2", "P1"],
+            "total_votos": [100, 200, 300],
+        })
+
+        # 1. Origem dos recursos
+        res_origem = analise_origem_recursos(df_exemplo)
+        self.assertEqual(len(res_origem), 2)
+        self.assertAlmostEqual(res_origem.loc[res_origem["tipo_receita"] == "Dinheiro Público", "total_arrecadado"].iloc[0], 4000.0)
+        self.assertAlmostEqual(res_origem["percentual"].sum(), 100.0)
+
+        # 2. Autofinanciamento
+        res_auto = analise_autofinanciamento(df_exemplo)
+        self.assertAlmostEqual(res_auto["volume_autofinanciamento"], 500.0)
+        self.assertAlmostEqual(res_auto["volume_terceiros"], 4000.0)
+        self.assertAlmostEqual(res_auto["taxa_autofinanciamento"], 33.33333333333333)
+
+        # 3. Custo por UF
+        res_uf = analise_custo_voto_por_uf(df_exemplo)
+        self.assertEqual(len(res_uf), 2)
+        self.assertIn("uf_candidato", res_uf.columns)
+
+    def test_heatmap_brasil_e_geojson(self) -> None:
+        """Testa o módulo src/geo.py: integridade do GeoJSON e geração do mapa coroplético."""
+        from src.geo import carregar_geojson_brasil, gerar_heatmap_brasil, agregar_dados_por_uf
+
+        # 1. Valida malha geográfica
+        geo = carregar_geojson_brasil()
+        self.assertIn("features", geo)
+        self.assertEqual(len(geo["features"]), 27, "O GeoJSON deve conter exatamente 27 UFs")
+
+        # 2. Agregação e mapa de calor
+        df_amostra = pd.DataFrame({
+            "uf_candidato": ["SP", "RJ", "MG", "BA"],
+            "valor_receita": [10000.0, 5000.0, 3000.0, 2000.0],
+            "cpf_candidato": ["1", "2", "3", "4"],
+            "cpf_cnpj_doador": ["D1", "D2", "D3", "D4"],
+            "total_votos": [100, 50, 30, 20],
+        })
+
+        df_uf = agregar_dados_por_uf(df_amostra)
+        self.assertEqual(len(df_uf), 27, "Base geográfica deve cobrir todas as 27 UFs")
+        self.assertIn("custo_mediano_voto", df_uf.columns)
+
+        # 3. Geração da figura choropleth
+        fig = gerar_heatmap_brasil(df_amostra, metrica="total_arrecadado")
+        self.assertIsNotNone(fig)
+        self.assertTrue(len(fig.data) > 0)
+        self.assertEqual(fig.data[0].type, "choropleth")
+
+    def test_garantia_sem_graficos_circulares(self) -> None:
+        """Assegura categoricamente a ausência de gráficos pie/donut em todo o repositório."""
+        import glob
+        arquivos = glob.glob("pages/*.py") + glob.glob("src/*.py") + ["app.py"]
+        for arq in arquivos:
+            with open(arq, "r", encoding="utf-8") as f:
+                conteudo = f.read()
+                self.assertNotIn("px.pie", conteudo, f"Encontrado px.pie em {arq}")
+                self.assertNotIn("go.Pie", conteudo, f"Encontrado go.Pie em {arq}")
+                self.assertNotIn("hole=", conteudo, f"Encontrado hole= (gráfico donut) em {arq}")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
