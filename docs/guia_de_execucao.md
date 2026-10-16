@@ -1,6 +1,8 @@
 # 🚀 Guia de Execução e Reproducibilidade
 
-Este guia passo a passo explica como configurar o ambiente, executar os scripts de ingestão de dados, rodar a suíte de testes e iniciar a aplicação web.
+> 🌐 **Plataforma Online em Produção:** Acesse diretamente em [**https://observatorioeleitoral.streamlit.app/**](https://observatorioeleitoral.streamlit.app/)
+
+Este guia passo a passo explica como acessar a versão em produção, configurar o ambiente local, executar os scripts de ingestão de dados, rodar a suíte de testes e iniciar a aplicação web.
 
 ---
 
@@ -66,25 +68,28 @@ Você verá a saída indicando:
 
 ---
 
-## 🌐 4. Iniciar a Aplicação Web Streamlit
+## 🌐 4. Iniciar a Aplicação Web (FastAPI + SPA)
 
-Para iniciar o dashboard analítico:
+Para iniciar o servidor backend e servir a Single-Page Application:
 
 ```bash
-.venv/bin/streamlit run app.py
+.venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-A aplicação abrirá automaticamente no navegador no endereço:  
-**`http://localhost:8501`**
+A aplicação estará disponível no navegador no endereço:  
+**`http://localhost:8000`**
 
-### Dicas de Navegação:
-- A aplicação inicia por padrão na **Visão Nacional ("Todas as UFs / Brasil")**.
-- Utilize a barra lateral à esquerda para filtrar por **Ano**, **Cargo**, **Partido** ou isolar uma **UF específica**.
-- Alterne entre as 4 páginas de análise no menu lateral do Streamlit:
-  1. `1_visao_geral`: KPIs nacionais, Mapa de Calor (Heatmap do Brasil), rankings e histograma de assimetria.
-  2. `2_custo_do_voto`: Análise do custo por voto, dispersão log-log e validação estatística da Hipótese H1 (Mann-Whitney U).
-  3. `3_porta_giratoria`: Auditoria de doadores que figuram como fornecedores via QSA (Hipótese H2) e diagrama Sankey.
-  4. `4_origem_e_autofinanciamento`: Evolução das fontes (público vs privado) e impacto do autofinanciamento.
+- **Health Check da API:** `http://localhost:8000/health`
+- **Documentação Interativa (Swagger/OpenAPI):** `http://localhost:8000/docs`
+
+### Dicas de Navegação na SPA:
+- **Bloco Global Fixo ("Tudo e Todos"):** O topo exibe os 4 KPIs macro e 4 gráficos analíticos consolidados de toda a base histórica (2018 a 2024), imunes aos filtros.
+- **Barra de Filtros:** Container de alto contraste para seleção de Ano, Cargo, Partido, UF e Município com travas eleitorais estritas.
+- **Visualização "1 por vez" (Tabs / Segmented Control):**
+  1. `Visão Geral`: Indicadores anuais, Top Doadores, Maiores Candidatos, Distribuição de Receitas (Log) e Ranking Federativo (Top Estados).
+  2. `Custo do Voto`: Dispersão Votos vs. Receita com Piso de Viabilidade (requer 1 Ano e 1 Cargo específico).
+  3. `Porta Giratória`: Auditoria de empresas e sócios doadores que faturam como fornecedores, higienizados com malha fina textual via Regex.
+  4. `Origem e Autofinanciamento`: Comparativo entre doações públicas/privadas, autofinanciamento e taxas reais de sucesso eleitoral.
 
 ---
 

@@ -15,28 +15,29 @@ flowchart TD
         B --> C["Parquet Canônico Otimizado (42 MB)"]
     end
 
-    subgraph Armazenamento ["Camada de Dados & Cache"]
+    subgraph Armazenamento ["Camada de Dados & DuckDB"]
         C --> D["src/data_loader.py (DuckDB / PyArrow)"]
-        D --> E["@st.cache_data (In-Memory MemoryCache)"]
-        F["data/geo/brazil-states.geojson (3.3 MB)"] --> G["src/geo.py (@st.cache_data)"]
+        D --> E["DuckDB Concurrency Lock (threading.Lock)"]
+        F["data/geo/brazil-states.geojson (3.3 MB)"] --> G["src/geo.py (GeoJSON Local)"]
     end
 
-    subgraph Negocio ["Camada de Negócio e Métricas"]
-        E --> H["src/metrics.py (Custo do Voto, H1, QSA, Autofinanciamento)"]
-        E --> I["src/ui_components.py (Filtros Globais st.session_state)"]
+    subgraph Backend ["Camada Backend (FastAPI / Uvicorn)"]
+        E --> H["src/metrics.py (Métricas Analíticas, Regex Sanitization)"]
+        H --> I["api/main.py (FastAPI Endpoints)"]
+        I --> J["/health & /api/meta/filtros"]
+        I --> K["/api/global (Bloco Fixo 'Tudo e Todos')"]
+        I --> L["/api/visao-geral, /api/custo-do-voto, /api/porta-giratoria, /api/origem-autofinanciamento"]
     end
 
-    subgraph Apresentacao ["Camada de Apresentação (Streamlit 1.35+)"]
-        H --> J["app.py (Hub e Badges)"]
-        H --> K["pages/1_visao_geral.py (KPIs, Heatmap Brasil, Top 10)"]
-        H --> L["pages/2_custo_do_voto.py (Dispersão Log, H1, Mann-Whitney)"]
-        H --> M["pages/3_porta_giratoria.py (Sankey, QSA, Retorno %)"]
-        H --> N["pages/4_origem_e_autofinanciamento.py (Evolução Temporal e Patrimônio)"]
-        I --> J
-        I --> K
-        I --> L
-        I --> M
-        I --> N
+    subgraph Frontend ["Camada de Apresentação (SPA React 18 + TailwindCSS + Chart.js)"]
+        I --> M["frontend/index.html (Single-Page Application)"]
+        M --> N["Bloco Global Fixo (4 KPIs + 4 Gráficos Históricos)"]
+        M --> O["Barra de Filtros (Alto Contraste com Travas Eleitorais)"]
+        M --> P["Tabs / Segmented Control ('1 por vez')"]
+        P --> Q["Visão Geral (Top Doadores, Maiores Candidatos, Log Histograma, Ranking Estados)"]
+        P --> R["Custo do Voto (Scatter Plot com Piso de Viabilidade)"]
+        P --> S["Porta Giratória (Retorno R$, Fornecedores Privados Higienizados)"]
+        P --> T["Origem e Autofinanciamento (Fontes, Taxas de Sucesso Reais)"]
     end
 ```
 
@@ -47,29 +48,35 @@ flowchart TD
 ### Por que DuckDB com Apache Parquet?
 - **Processamento Vetorial:** O DuckDB executa filtros, agregações e projeções diretamente no grão colunar do arquivo Parquet, lendo apenas as colunas requisitadas sem carregar o arquivo inteiro na memória RAM desnecessariamente.
 - **Compressão Snappy:** Redução de ~144 MB de CSVs brutos para **42.13 MB**, acelerando o tempo de I/O em disco.
+- **Concorrência Segura (Thread-Safety):** Implementação de cursor dedicado e `threading.Lock()` no backend FastAPI, garantindo execução simultânea sem colisões de conexões assíncronas.
 - **Velocidade de Ingestão:** Conversão e consolidação de 959.770 registros em aproximadamente **2,0 segundos** via DuckDB.
 
 ---
 
-## 🧭 3. Navegação Multi-Páginas e Estado Global (`st.session_state`)
+## 🧭 3. Arquitetura Single-Page Application (SPA) e Diretrizes de UI/UX
 
-A aplicação utiliza o recurso nativo de multi-páginas do Streamlit. Para garantir que os filtros aplicados pelo usuário persistam ao transitar entre as abas:
-- **Barra Lateral Centralizada:** A função `renderizar_sidebar()` em `src/ui_components.py` gerencia os seletores de **Ano**, **Cargo**, **Partido** e **Unidade Federativa (UF)**.
-- **Sincronização de Estado:** Os valores ativos são armazenados em chaves de sessão (`filtro_ano`, `filtro_cargo`, `filtro_partido`, `filtro_uf`).
-- **Visão Nacional Padrão:** Por padrão, o filtro de UF inicializa em `"Todas as UFs (Brasil)"`. Qualquer subpágina acessada reflete imediatamente o escopo geográfico selecionado.
+A plataforma adota o padrão **Single-Page Application (SPA)** moderna, reativa e sem recarregamento:
+- **Zero Textos e Zero Conclusões:** Interface focada puramente na visualização analítica — exclusivamente KPIs, controles de filtro e gráficos com seus títulos objetivos (sem caixas de "insights", textos discursivos ou conclusões).
+- **Bloco Global Fixo ("Tudo e Todos"):** Topo da página apresenta métricas e rankings consolidados de toda a base histórica (2018 a 2024), imunes aos filtros.
+- **Visualização "1 por vez":** Abaixo do bloco global, o usuário alterna entre as 4 seções analíticas via abas/segmented control, prevenindo sobrecarga visual e scroll excessivo.
+- **Barra de Filtros:** Container de alto contraste visual com travas de integridade eleitoral automáticas:
+  - Anos Gerais (2018/2022): Restringe aos cargos federais/estaduais/distritais e desativa filtro de município.
+  - Anos Municipais (2020/2024): Restringe aos cargos de Prefeito e Vereador.
+  - Custo do Voto: Scatter plot unicamente liberado mediante seleção de 1 Ano e 1 Cargo específico.
 
 ---
 
 ## 🗺️ 4. Módulo Geoespacial (`src/geo.py`)
 
-Para fornecer mapas coropléticos interativos de calor (Heatmaps) sem latência de rede e com execução 100% offline:
+Para fornecer métricas e rankings geográficos sem latência de rede:
 1. **Malha Cartográfica Local:** O arquivo GeoJSON com a delimitação geográfica das 27 UFs está armazenado em `data/geo/brazil-states.geojson`.
-2. **Carregamento Otimizado:** A malha é mantida na memória via `@st.cache_data` (tempo de carregamento < 30ms).
-3. **Plotly Choropleth:** Renderização com limites fixos ajustados (`fitbounds='locations'`) e paletas perceptualmente uniformes para evitar viés de saturação.
+2. **Carregamento Otimizado:** Leitura rápida e parsing JSON sem dependências pesadas de frameworks externos.
+3. **Ranking Federativo:** Renderização dinâmica das 10 maiores UFs em volume financeiro na SPA via Chart.js.
 
 ---
 
-## 🔒 5. Segurança, Privacidade e LGPD
+## 🔒 5. Higienização Textual e Segurança
 
+- **Malha Fina Textual (Regex):** Filtragem case-insensitive e insensível a acentuação na detecção de doadores/fornecedores para expurgar entidades institucionais/públicas e repasses de aliados, isolando estritamente relações comerciais privadas na Porta Giratória.
 - **Anonimização de Doadores PF:** Função `anonimizar_documento()` mascara os 6 dígitos centrais do CPF (`***.123.456-**`).
 - **Auditoria de Fornecedores:** Conexão direta entre CNPJ básico de fornecedores e doadores para investigação de conformidade pública, preservando a transparência ativa preconizada pela LAI (Lei de Acesso à Informação).
