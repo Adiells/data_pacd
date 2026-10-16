@@ -20,8 +20,9 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Streamlit
-.streamlit/secrets.toml
+# Logs e arquivos de execução local
+*.log
+
 
 # Variáveis de ambiente e segredos
 .env
@@ -64,3 +65,6 @@ data/raw/*
 # Arquivos do sistema operacional
 .DS_Store
 Thumbs.db
+
+# Maestri workspace state
+.maestri/

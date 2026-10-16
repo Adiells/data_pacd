@@ -1,6 +1,6 @@
 """Módulo de carregamento e acesso a dados eleitorais.
 
-Fornece funções com cache inteligente (Streamlit) para leitura em alta performance
+Fornece funções com cache inteligente em memória para leitura em alta performance
 usando DuckDB/PyArrow e utilitários para popular seletores e filtros na interface.
 """
 
@@ -14,7 +14,7 @@ from typing import Optional
 import duckdb
 import pandas as pd
 import pyarrow.parquet as pq
-import streamlit as st
+from functools import lru_cache
 
 # Garante que a raiz do projeto esteja no sys.path para importações relativas
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -29,7 +29,6 @@ from scripts.convert_csv_to_parquet import (
 logger = logging.getLogger(__name__)
 
 
-@st.cache_data(show_spinner="Carregando base de dados eleitorais...")
 def carregar_dados(caminho_parquet: str | Path | None = None) -> pd.DataFrame:
     """Carrega o DataFrame consolidado de eleições a partir de arquivo Parquet.
 
@@ -101,7 +100,6 @@ def carregar_dados(caminho_parquet: str | Path | None = None) -> pd.DataFrame:
     return df
 
 
-@st.cache_data
 def obter_dimensao_candidatos(df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """Extrai a tabela canônica de candidatos (dimensão não-duplicada).
 
@@ -155,7 +153,6 @@ def obter_dimensao_candidatos(df: Optional[pd.DataFrame] = None) -> pd.DataFrame
     return cand_dim
 
 
-@st.cache_data
 def listar_anos(df: Optional[pd.DataFrame] = None) -> list[int]:
     """Retorna a lista ordenada dos anos eleitorais presentes na base.
 
@@ -180,7 +177,6 @@ def listar_anos(df: Optional[pd.DataFrame] = None) -> list[int]:
     return sorted(anos_validos.tolist())
 
 
-@st.cache_data
 def listar_cargos(df: Optional[pd.DataFrame] = None) -> list[str]:
     """Retorna a lista ordenada e higienizada dos cargos disputados.
 
@@ -206,7 +202,6 @@ def listar_cargos(df: Optional[pd.DataFrame] = None) -> list[str]:
     return sorted(cargos_unicos)
 
 
-@st.cache_data
 def listar_partidos(df: Optional[pd.DataFrame] = None) -> list[str]:
     """Retorna a lista ordenada das siglas partidárias presentes na base.
 
@@ -233,7 +228,6 @@ def listar_partidos(df: Optional[pd.DataFrame] = None) -> list[str]:
     return sorted(partidos_unicos)
 
 
-@st.cache_data
 def listar_ufs(df: Optional[pd.DataFrame] = None, campo: str = "uf_candidato") -> list[str]:
     """Retorna a lista ordenada das Unidades Federativas presentes na base.
 
@@ -268,7 +262,6 @@ def listar_ufs(df: Optional[pd.DataFrame] = None, campo: str = "uf_candidato") -
     return sorted(ufs_unicas)
 
 
-@st.cache_data
 def listar_tipos_receita(df: Optional[pd.DataFrame] = None) -> list[str]:
     """Retorna os tipos de receita mapeados (Dinheiro Público, Privado, Aliados).
 
@@ -294,7 +287,6 @@ def listar_tipos_receita(df: Optional[pd.DataFrame] = None) -> list[str]:
     return sorted(tipos_unicos)
 
 
-@st.cache_data
 def listar_municipios(
     df: Optional[pd.DataFrame] = None,
     uf: Optional[str] = None,

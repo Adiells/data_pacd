@@ -15,7 +15,6 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import streamlit as st
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +54,6 @@ NOMES_ESTADOS: Dict[str, str] = {
 TODAS_UFS = sorted(list(NOMES_ESTADOS.keys()))
 
 
-@st.cache_data
 def carregar_geojson_brasil() -> Dict[str, Any]:
     """Carrega a malha vetorial GeoJSON oficial dos 27 estados brasileiros com cache.
 
