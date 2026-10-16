@@ -8,12 +8,124 @@ geográfico de receitas e correlação com sucesso eleitoral.
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# Padrões Regex canônicos de higienização da malha fina (AGENTS.md & PROMPTS.md)
+PADRAO_INSTITUCIONAL = r"(dire[cç][aãõo]es|dire[cç][aã]o|[oó]rg[aã]os?|comiss[aãõo]es|comiss[aã]o|comit[eê]s?|partidos?)"
+PADRAO_ALIADOS = r"(elei[cç][aãõo]es|elei[cç][aã]o|campanhas?)"
+REGEX_INSTITUCIONAL_ALIADOS = re.compile(
+    rf"(?:{PADRAO_INSTITUCIONAL}|{PADRAO_ALIADOS})",
+    re.IGNORECASE
+)
+
+
+def remover_acentos(texto: Any) -> str:
+    """Remove diacríticos e acentos de uma string."""
+    if not isinstance(texto, str):
+        return str(texto) if pd.notna(texto) else ""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def filtrar_entidades_particulares(df: pd.DataFrame, coluna_nome: str = "nome_doador") -> pd.DataFrame:
+    """Filtra e exclui repasses partidários/institucionais e de campanha/aliados via regex case-insensitive e sem acentos."""
+    if df.empty or coluna_nome not in df.columns:
+        return df
+
+    nomes_sem_acento = df[coluna_nome].fillna("").astype(str).apply(remover_acentos)
+    # Padrão sem acentos para garantir correspondência exata
+    padrao_unaccented = re.compile(
+        r"(?:direcoes|direcao|orgaos?|comissoes|comissao|comites?|partidos?|eleicoes|eleicao|campanhas?)",
+        re.IGNORECASE,
+    )
+    mascara_remover = nomes_sem_acento.str.contains(padrao_unaccented, regex=True)
+    return df[~mascara_remover].copy()
+
+
+def atribuir_status_eleitoral(df_candidatos: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza e atribui a situação eleitoral (1 = eleito, 0 = não eleito/suplente).
+
+    Suporta marcação textual de 'ELEITO', 'ELEITO POR QP', 'ELEITO POR MÉDIA'.
+    Caso o dataset traga apenas situação cadastral ('deferido'), infere o resultado
+    pelo ranking de votos e bancadas institucionais do pleito.
+    """
+    if df_candidatos.empty:
+        df_res = df_candidatos.copy()
+        df_res["eleito"] = pd.Series(dtype="int64")
+        return df_res
+
+    df_res = df_candidatos.copy()
+    sit = df_res["situacao"].fillna("").astype(str).str.upper() if "situacao" in df_res.columns else pd.Series([""] * len(df_res), index=df_res.index)
+    
+    tem_eleito_textual = sit.str.contains(r"\bELEITO\b|ELEITO POR QP|ELEITO POR M[ÉE]DIA|2[º°] TURNO", regex=True).any()
+    
+    if tem_eleito_textual:
+        df_res["eleito"] = (
+            sit.str.contains(r"\bELEITO\b|ELEITO POR QP|ELEITO POR M[ÉE]DIA|2[º°] TURNO", regex=True)
+            & ~sit.str.contains(r"N[ÃA]O\s*ELEITO", regex=True)
+        ).astype(int)
+        return df_res
+
+    # Fallback institucional por ranking de votos quando o dataset contém apenas situação cadastral
+    df_res["eleito"] = 0
+    if "total_votos" not in df_res.columns:
+        return df_res
+
+    vagas_fed = {
+        "SP": 70, "MG": 53, "RJ": 46, "BA": 39, "RS": 31, "PR": 30, "PE": 25, "CE": 22,
+        "MA": 18, "GO": 17, "PA": 17, "PB": 12, "ES": 10, "PI": 10, "AL": 9, "AC": 8,
+        "AM": 8, "AP": 8, "DF": 8, "MS": 8, "MT": 8, "RN": 8, "RO": 8, "RR": 8, "SC": 16,
+        "SE": 8, "TO": 8,
+    }
+
+    campos_agrup = [c for c in ["ano", "cargo", "uf_candidato"] if c in df_res.columns]
+    if not campos_agrup:
+        # Se não houver campos de agrupamento, toma os top 15% mais votados
+        n = len(df_res)
+        v = max(1, int(n * 0.15))
+        top_idx = df_res.sort_values(by="total_votos", ascending=False).head(v).index
+        df_res.loc[top_idx, "eleito"] = 1
+        return df_res
+
+    for _, grp in df_res.groupby(campos_agrup):
+        cargo = str(grp["cargo"].iloc[0]).lower() if "cargo" in grp.columns else ""
+        ano = int(grp["ano"].iloc[0]) if "ano" in grp.columns else 2022
+        uf = str(grp["uf_candidato"].iloc[0]).upper() if "uf_candidato" in grp.columns else "PB"
+        n = len(grp)
+
+        if "governador" in cargo or "presidente" in cargo:
+            vagas = 1
+        elif "prefeito" in cargo:
+            # Em média 40-45% de eleitos se agrupado por estado, ou 1 por município
+            if "municipio_candidato" in grp.columns and grp["municipio_candidato"].nunique() > 1:
+                vagas = max(1, grp["municipio_candidato"].nunique())
+            else:
+                vagas = max(1, int(np.ceil(n * 0.44)))
+        elif "senador" in cargo:
+            vagas = 2 if ano == 2018 else 1
+        elif "deputado federal" in cargo:
+            vagas = vagas_fed.get(uf, 12)
+        elif "deputado estadual" in cargo or "deputado distrital" in cargo:
+            vagas = min(n, vagas_fed.get(uf, 12) * 3)
+        elif "vereador" in cargo:
+            vagas = max(1, int(n * 0.12))
+        else:
+            vagas = max(1, int(n * 0.12))
+
+        top_idx = grp.sort_values(by="total_votos", ascending=False).head(vagas).index
+        df_res.loc[top_idx, "eleito"] = 1
+
+    return df_res
+
 
 
 def calcular_custo_voto(df: pd.DataFrame) -> pd.DataFrame:
@@ -135,13 +247,18 @@ def identificar_porta_giratoria(df: pd.DataFrame) -> pd.DataFrame:
         df_vazio["taxa_retorno"] = pd.Series(dtype="float64")
         return df_vazio
 
+    # Higienização via Regex: Remove institucional (partido/órgão) e repasse de aliados (eleição/campanha)
+    df_limpo = filtrar_entidades_particulares(df, "nome_doador")
+    if "nome_fornecedor" in df_limpo.columns:
+        df_limpo = filtrar_entidades_particulares(df_limpo, "nome_fornecedor")
+
     # Conversão segura para numérico antes do filtro
     fornecedor_num = pd.to_numeric(
-        df["valor_recebido_como_fornecedor"], errors="coerce"
+        df_limpo["valor_recebido_como_fornecedor"], errors="coerce"
     ).fillna(0.0)
     mascara_fornecedor = fornecedor_num > 0
 
-    df_filtrado = df[mascara_fornecedor].copy()
+    df_filtrado = df_limpo[mascara_fornecedor].copy()
 
     if df_filtrado.empty:
         df_filtrado["taxa_retorno"] = pd.Series(dtype="float64")
@@ -406,14 +523,11 @@ def analise_autofinanciamento(df: pd.DataFrame) -> Dict[str, Any]:
     vol_terceiros = float(df_calc.loc[~mask_auto, coluna_receita].sum())
     total_ops = int(mask_auto.sum())
 
-    # Taxa de sucesso comparada
+    # Taxa de sucesso comparada (normalizada via atribuir_status_eleitoral)
     taxa_sucesso_auto = 0.0
     taxa_sucesso_terceiros = 0.0
-    if "situacao" in df_calc.columns:
-        sit = df_calc["situacao"].fillna("").astype(str).str.lower()
-        eleito = (sit.str.contains("eleito") & ~sit.str.contains(r"n[aã]o[\s\-_]*eleito")).astype(int)
-        df_calc["eleito"] = eleito
-
+    df_calc = atribuir_status_eleitoral(df_calc)
+    if "eleito" in df_calc.columns:
         if mask_auto.sum() > 0:
             taxa_sucesso_auto = float(df_calc.loc[mask_auto, "eleito"].mean() * 100.0)
         if (~mask_auto).sum() > 0:
@@ -465,4 +579,49 @@ def analise_custo_voto_por_uf(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     return agrupado.sort_values(by="mediana_custo_voto", ascending=False).reset_index(drop=True)
+
+
+def calcular_sucesso_decil(df: pd.DataFrame) -> Dict[str, float]:
+    """Calcula a taxa de sucesso eleitoral do decil mais financiado (Top 10%) vs metade menos financiada (Bottom 50%).
+
+    Retorna:
+        dict: {'taxa_top10': float, 'taxa_bottom50': float, 'diferenca_sucesso': float}
+    """
+    if df.empty:
+        return {"taxa_top10": 0.0, "taxa_bottom50": 0.0, "diferenca_sucesso": 0.0}
+
+    coluna_receita = "total_receita" if "total_receita" in df.columns else ("valor_receita" if "valor_receita" in df.columns else None)
+    if not coluna_receita:
+        return {"taxa_top10": 0.0, "taxa_bottom50": 0.0, "diferenca_sucesso": 0.0}
+
+    # Agrupa por candidato
+    agrup_cols = [c for c in ["cpf_candidato", "nome_candidato", "cargo", "sigla_partido", "situacao", "uf_candidato", "ano"] if c in df.columns]
+    if "total_votos" in df.columns:
+        agrup_cols.append("total_votos")
+
+    cand = (
+        df.groupby(agrup_cols, as_index=False)[coluna_receita]
+        .sum()
+        .rename(columns={coluna_receita: "total_receita"})
+        .sort_values(by="total_receita", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    cand_class = atribuir_status_eleitoral(cand)
+    n = len(cand_class)
+    if n == 0 or "eleito" not in cand_class.columns:
+        return {"taxa_top10": 0.0, "taxa_bottom50": 0.0, "diferenca_sucesso": 0.0}
+
+    tamanho_top10 = max(1, int(np.ceil(n * 0.10)))
+    tamanho_bottom50 = max(1, int(np.floor(n * 0.50)))
+
+    taxa_top10 = float(cand_class.iloc[:tamanho_top10]["eleito"].mean() * 100.0)
+    taxa_bottom50 = float(cand_class.iloc[-tamanho_bottom50:]["eleito"].mean() * 100.0)
+    diferenca = taxa_top10 - taxa_bottom50
+
+    return {
+        "taxa_top10": taxa_top10,
+        "taxa_bottom50": taxa_bottom50,
+        "diferenca_sucesso": diferenca,
+    }
 
