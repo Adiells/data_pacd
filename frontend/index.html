@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PACD - Painel Eleitoral</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- React 18 & ReactDOM & Babel Standalone -->
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            },
+            accent: {
+              emerald: '#10b981',
+              amber: '#f59e0b',
+              rose: '#f43f5e',
+              indigo: '#6366f1',
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #0b0f19;
+      color: #f3f4f6;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .chart-container {
+      position: relative;
+      height: 320px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body class="bg-[#0b0f19] text-gray-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false };
+      }
+      static getDerivedStateFromError() {
+        return { hasError: true };
+      }
+      componentDidCatch(error, errorInfo) {
+        console.error("ErrorBoundary detectou erro:", error, errorInfo);
+      }
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="flex flex-col items-center justify-center p-12 text-center bg-[#111827] border border-gray-800 rounded-xl my-4">
+              <div className="w-12 h-12 mb-3 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-xl">!</div>
+              <button
+                type="button"
+                onClick={() => this.setState({ hasError: false })}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-semibold transition"
+              >
+                Recarregar Painel
+              </button>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
+
+    function formatMoeda(val) {
+      if (val === undefined || val === null || isNaN(val)) return "R$ 0,00";
+      return "R$ " + Number(val).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatNumero(val) {
+      if (val === undefined || val === null || isNaN(val)) return "0";
+      return Number(val).toLocaleString("pt-BR");
+    }
+
+    function ChartCanvas({ type, data, options, id }) {
+      const canvasRef = useRef(null);
+      const chartInstanceRef = useRef(null);
+
+      useEffect(() => {
+        if (!canvasRef.current) return;
+        if (chartInstanceRef.current) {
+          chartInstanceRef.current.destroy();
+          chartInstanceRef.current = null;
+        }
+
+        try {
+          const ctx = canvasRef.current.getContext('2d');
+          chartInstanceRef.current = new Chart(ctx, {
+            type: type || 'bar',
+            data: data,
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  labels: { color: '#9ca3af', font: { size: 11 } }
+                },
+                tooltip: {
+                  backgroundColor: '#1f2937',
+                  titleColor: '#f9fafb',
+                  bodyColor: '#e5e7eb',
+                  borderColor: '#374151',
+                  borderWidth: 1,
+                }
+              },
+              scales: {
+                x: {
+                  ticks: { color: '#9ca3af', font: { size: 10 } },
+                  grid: { color: '#1f2937' }
+                },
+                y: {
+                  ticks: { color: '#9ca3af', font: { size: 10 } },
+                  grid: { color: '#1f2937' }
+                }
+              },
+              ...options
+            }
+          });
+        } catch (err) {
+          console.error("Erro ao inicializar Chart.js:", id, err);
+        }
+
+        return () => {
+          if (chartInstanceRef.current) {
+            chartInstanceRef.current.destroy();
+            chartInstanceRef.current = null;
+          }
+        };
+      }, [data, options, type]);
+
+      return (
+        <div className="chart-container">
+          <canvas ref={canvasRef} id={id}></canvas>
+        </div>
+      );
+    }
+
+    const NOMES_UFS = {
+      AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia",
+      CE: "Ceará", DF: "Distrito Federal", ES: "Espírito Santo", GO: "Goiás",
+      MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul", MG: "Minas Gerais",
+      PA: "Pará", PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí",
+      RJ: "Rio de Janeiro", RN: "Rio Grande do Norte", RS: "Rio Grande do Sul",
+      RO: "Rondônia", RR: "Roraima", SC: "Santa Catarina", SP: "São Paulo",
+      SE: "Sergipe", TO: "Tocantins"
+    };
+
+    const BRAZIL_MAP_GRID = [
+      [null, null, 'RR', null, 'AP', null, null, null],
+      [null, 'AM', 'PA', 'MA', 'CE', 'RN', null, null],
+      ['AC', 'RO', 'TO', 'PI', 'PB', 'PE', null, null],
+      [null, 'MT', 'GO', 'DF', 'BA', 'AL', 'SE', null],
+      [null, 'MS', 'MG', 'ES', null, null, null, null],
+      [null, null, 'SP', 'RJ', null, null, null, null],
+      [null, 'PR', 'SC', null, null, null, null, null],
+      [null, 'RS', null, null, null, null, null, null],
+    ];
+
+    const ANOS_PADRAO = [2024, 2022, 2020, 2018];
+    const CARGOS_PADRAO = {
+      2018: ["DEPUTADO FEDERAL", "DEPUTADO ESTADUAL", "DEPUTADO DISTRITAL", "SENADOR", "GOVERNADOR", "PRESIDENTE"],
+      2022: ["DEPUTADO FEDERAL", "DEPUTADO ESTADUAL", "DEPUTADO DISTRITAL", "SENADOR", "GOVERNADOR", "PRESIDENTE"],
+      2020: ["PREFEITO", "VEREADOR"],
+      2024: ["PREFEITO", "VEREADOR"]
+    };
+    const UFS_PADRAO = [
+      "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT",
+      "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"
+    ];
+    const PARTIDOS_PADRAO = [
+      "AVANTE", "CIDADANIA", "MDB", "NOVO", "PATRIOTA", "PC do B", "PDT", "PL",
+      "PODE", "PP", "PRD", "PROS", "PRTB", "PSB", "PSC", "PSD", "PSDB", "PSOL",
+      "PSTU", "PT", "PTB", "PV", "REDE", "REPUBLICANOS", "SOLIDARIEDADE", "UNIÃO"
+    ];
+
+    function getHeatColor(val, min, max, alpha = 1) {
+      if (val === undefined || val === null || isNaN(val) || val <= 0) {
+        return `rgba(31, 41, 55, ${alpha})`;
+      }
+      const t = max > min ? Math.max(0, Math.min(1, (val - min) / (max - min))) : 0.5;
+      let r, g, b;
+      if (t < 0.25) {
+        const s = t / 0.25;
+        r = Math.round(254 + (253 - 254) * s);
+        g = Math.round(240 + (224 - 240) * s);
+        b = Math.round(138 + (71 - 138) * s);
+      } else if (t < 0.5) {
+        const s = (t - 0.25) / 0.25;
+        r = Math.round(253 + (249 - 253) * s);
+        g = Math.round(224 + (115 - 224) * s);
+        b = Math.round(71 + (22 - 71) * s);
+      } else if (t < 0.75) {
+        const s = (t - 0.5) / 0.25;
+        r = Math.round(249 + (239 - 249) * s);
+        g = Math.round(115 + (68 - 115) * s);
+        b = Math.round(22 + (68 - 22) * s);
+      } else {
+        const s = (t - 0.75) / 0.25;
+        r = Math.round(239 + (153 - 239) * s);
+        g = Math.round(68 + (27 - 68) * s);
+        b = Math.round(68 + (27 - 68) * s);
+      }
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function getHeatTextColor(val, min, max) {
+      if (!val || val <= 0) return '#6b7280';
+      const t = max > min ? (val - min) / (max - min) : 0;
+      return t > 0.4 ? '#ffffff' : '#111827';
+    }
+
+    function PanoramaFederativoHeatmap({ data }) {
+      const [hoveredUf, setHoveredUf] = useState(null);
+
+      const ufsData = Array.isArray(data) ? data : [];
+      const ufsMap = {};
+      ufsData.forEach(d => {
+        if (d && d.uf) {
+          ufsMap[d.uf] = Number(d.total) || 0;
+        }
+      });
+
+      const totals = ufsData.map(d => Number(d.total) || 0).filter(t => t > 0);
+      const minVal = totals.length > 0 ? Math.min(...totals) : 0;
+      const maxVal = totals.length > 0 ? Math.max(...totals) : 1;
+      const sumVal = ufsData.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
+
+      const topUf = ufsData.length > 0 ? ufsData[0] : null;
+      const activeUf = hoveredUf || (topUf ? topUf.uf : null);
+      const activeTotal = activeUf ? (ufsMap[activeUf] || 0) : 0;
+      const activePct = sumVal > 0 ? ((activeTotal / sumVal) * 100).toFixed(1) : "0.0";
+
+      return (
+        <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg lg:col-span-2 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-800 gap-2">
+            <h3 className="text-sm font-semibold text-gray-300 tracking-wide">
+              Panorama Federativo e Mapa de Calor do Brasil (Heatmap)
+            </h3>
+            <div className="flex items-center space-x-2 text-xs">
+              <span className="text-gray-400 font-medium">{formatMoeda(minVal)}</span>
+              <div className="w-24 sm:w-36 h-2.5 rounded-full bg-gradient-to-r from-[#fef08a] via-[#fb923c] via-[#ef4444] to-[#991b1b] border border-gray-700"></div>
+              <span className="text-gray-400 font-medium">{formatMoeda(maxVal)}</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            {/* Mapa de Calor Cartográfico (Grid 8x8) */}
+            <div className="lg:col-span-5 flex flex-col items-center justify-center p-2 bg-[#111827]/40 rounded-lg border border-gray-800/60">
+              <div className="h-6 mb-2 flex items-center justify-center text-xs font-semibold">
+                {activeUf ? (
+                  <span className="text-blue-300">
+                    {activeUf} - {NOMES_UFS[activeUf] || activeUf}: {formatMoeda(activeTotal)} ({activePct}%)
+                  </span>
+                ) : null}
+              </div>
+              <div className="space-y-1">
+                {BRAZIL_MAP_GRID.map((row, rIdx) => (
+                  <div key={rIdx} className="flex gap-1 justify-center">
+                    {row.map((ufCode, cIdx) => {
+                      if (!ufCode) {
+                        return <div key={cIdx} className="w-7 h-7 sm:w-8 sm:h-8" />;
+                      }
+                      const val = ufsMap[ufCode] || 0;
+                      const bg = val > 0 ? getHeatColor(val, minVal, maxVal, 0.9) : '#1f2937';
+                      const border = val > 0 ? getHeatColor(val, minVal, maxVal, 1) : '#374151';
+                      const textColor = getHeatTextColor(val, minVal, maxVal);
+                      const isHovered = hoveredUf === ufCode;
+
+                      return (
+                        <div
+                          key={ufCode}
+                          onMouseEnter={() => setHoveredUf(ufCode)}
+                          onMouseLeave={() => setHoveredUf(null)}
+                          style={{ backgroundColor: bg, borderColor: border, color: textColor }}
+                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded flex items-center justify-center font-bold text-[11px] cursor-pointer border transition-all duration-150 select-none shadow-sm ${
+                            isHovered ? 'scale-125 z-20 ring-2 ring-white shadow-lg' : 'hover:scale-110 z-10'
+                          }`}
+                        >
+                          {ufCode}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Gráfico de Barras com Gradiente de Calor */}
+            <div className="lg:col-span-7">
+              <ChartCanvas
+                type="bar"
+                id="chart-vg-heatmap"
+                data={{
+                  labels: ufsData.map(d => d.uf),
+                  datasets: [{
+                    label: 'Volume Total (R$)',
+                    data: ufsData.map(d => d.total),
+                    backgroundColor: ufsData.map(d => getHeatColor(d.total, minVal, maxVal, 0.85)),
+                    borderColor: ufsData.map(d => getHeatColor(d.total, minVal, maxVal, 1)),
+                    borderWidth: 1,
+                    borderRadius: 4,
+                  }]
+                }}
+                options={{
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                      callbacks: {
+                        label: function(context) {
+                          const val = context.raw || 0;
+                          const pct = sumVal > 0 ? ((val / sumVal) * 100).toFixed(1) : '0.0';
+                          return `Volume: ${formatMoeda(val)} (${pct}%)`;
+                        }
+                      }
+                    }
+                  },
+                  scales: {
+                    x: {
+                      ticks: { color: '#9ca3af', font: { size: 10 } },
+                      grid: { display: false }
+                    },
+                    y: {
+                      ticks: {
+                        color: '#9ca3af',
+                        font: { size: 10 },
+                        callback: function(value) {
+                          if (value >= 1000000000) return 'R$ ' + (value / 1000000000).toFixed(1) + 'B';
+                          if (value >= 1000000) return 'R$ ' + (value / 1000000).toFixed(0) + 'M';
+                          if (value >= 1000) return 'R$ ' + (value / 1000).toFixed(0) + 'k';
+                          return 'R$ ' + value;
+                        }
+                      },
+                      grid: { color: '#1f2937' }
+                    }
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      // Metadados e Filtros
+      const [meta, setMeta] = useState(null);
+      const [ano, setAno] = useState(ANOS_PADRAO[0]);
+      const [cargo, setCargo] = useState("TODOS");
+      const [uf, setUf] = useState("TODAS");
+      const [partido, setPartido] = useState("TODOS");
+      const [municipio, setMunicipio] = useState("TODOS");
+
+      // Seção Ativa (Mostrar 1 por vez)
+      const [activeTab, setActiveTab] = useState("visao-geral");
+
+      // Estados de Dados
+      const [globalData, setGlobalData] = useState(null);
+      const [dynamicData, setDynamicData] = useState(null);
+      const [dynamicLoading, setDynamicLoading] = useState(false);
+      const [loading, setLoading] = useState(true);
+
+      const handleTabChange = (newTab) => {
+        if (newTab !== activeTab) {
+          setActiveTab(newTab);
+          setDynamicData(null);
+          setDynamicLoading(true);
+        }
+      };
+
+      // Carrega metadados iniciais e dados globais
+      useEffect(() => {
+        Promise.all([
+          fetch('/api/meta/filtros').then(r => r.json()),
+          fetch('/api/global').then(r => r.json())
+        ]).then(([metaRes, globRes]) => {
+          setMeta(metaRes);
+          setGlobalData(globRes);
+          setLoading(false);
+        }).catch(err => console.error("Erro ao carregar dados iniciais:", err));
+      }, []);
+
+      // Atualiza cargos disponíveis quando ano muda (Travas 2018/2022 vs 2020/2024)
+      useEffect(() => {
+        if (!meta) return;
+        const cargosValidos = meta.cargos_por_ano?.[ano] || CARGOS_PADRAO[ano] || [];
+        if (cargo !== "TODOS" && !cargosValidos.includes(cargo)) {
+          setCargo("TODOS");
+        }
+        // Desativa município se for 2018 ou 2022
+        if (ano === 2018 || ano === 2022) {
+          setMunicipio("TODOS");
+        }
+      }, [ano, meta]);
+
+      // Carrega dados da seção dinâmica ativa
+      useEffect(() => {
+        if (!meta) return;
+        let url = '';
+        const params = new URLSearchParams();
+        params.append("ano", ano);
+        if (cargo && cargo !== "TODOS") params.append("cargo", cargo);
+        if (uf && uf !== "TODAS") params.append("uf", uf);
+        if (partido && partido !== "TODOS") params.append("partido", partido);
+        if (municipio && municipio !== "TODOS") params.append("municipio", municipio);
+
+        const currentTab = activeTab;
+
+        if (currentTab === "visao-geral") {
+          url = `/api/visao-geral?${params.toString()}`;
+        } else if (currentTab === "custo-do-voto") {
+          if (!cargo || cargo === "TODOS") {
+            setDynamicData(null);
+            setDynamicLoading(false);
+            return;
+          }
+          url = `/api/custo-do-voto?${params.toString()}`;
+        } else if (currentTab === "porta-giratoria") {
+          url = `/api/porta-giratoria?${params.toString()}`;
+        } else if (currentTab === "origem-autofinanciamento") {
+          url = `/api/origem-autofinanciamento?${params.toString()}`;
+        }
+
+        if (url) {
+          setDynamicLoading(true);
+          fetch(url)
+            .then(r => {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            })
+            .then(data => {
+              setDynamicData({ tab: currentTab, ...data });
+              setDynamicLoading(false);
+            })
+            .catch(err => {
+              console.error("Erro ao carregar seção dinâmica:", err);
+              setDynamicLoading(false);
+            });
+        }
+      }, [activeTab, ano, cargo, uf, partido, municipio, meta]);
+
+      if (loading || !globalData) {
+        return (
+          <div className="flex items-center justify-center min-h-screen bg-[#0b0f19]">
+            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        );
+      }
+
+      const isGeralYear = ano === 2018 || ano === 2022;
+      const rawCargos = (meta?.cargos_por_ano && Array.isArray(meta.cargos_por_ano[ano]) && meta.cargos_por_ano[ano].length) ? meta.cargos_por_ano[ano] : (CARGOS_PADRAO[ano] || []);
+      const cargosValidos = [...rawCargos];
+      if (isGeralYear && !cargosValidos.includes("DEPUTADO DISTRITAL")) {
+        cargosValidos.splice(2, 0, "DEPUTADO DISTRITAL");
+      }
+
+      return (
+        <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+          <header className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-800 pb-4 mb-6 gap-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-3 h-8 bg-blue-500 rounded-sm"></div>
+              <div>
+                <h1 className="text-xl md:text-2xl font-black tracking-wider text-white uppercase">PACD — PAINEL DE FINANCIAMENTO ELEITORAL</h1>
+                <span className="text-xs text-blue-400 font-mono tracking-widest uppercase">BASE ELEITORAL BRASILEIRA 2018–2024</span>
+              </div>
+            </div>
+          </header>
+          
+          {/* ================================================================= */}
+          {/* 1. BLOCO FIXO GLOBAL: "TUDO E TODOS" (IMUNE A FILTROS)            */}
+          {/* ================================================================= */}
+          <div className="bg-[#111827] border border-gray-800 rounded-xl p-5 shadow-2xl space-y-6">
+            
+            {/* 4 KPIs Globais */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume Financeiro Ativo</span>
+                <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatMoeda(globalData.kpis.volume_financeiro_ativo)}</span>
+              </div>
+              <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Candidaturas no Recorte</span>
+                <span className="text-2xl font-bold text-emerald-400 mt-1 block">{formatNumero(globalData.kpis.candidaturas_no_recorte)}</span>
+              </div>
+              <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Doadores no Recorte</span>
+                <span className="text-2xl font-bold text-amber-400 mt-1 block">{formatNumero(globalData.kpis.doadores_no_recorte)}</span>
+              </div>
+              <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Transações Registradas</span>
+                <span className="text-2xl font-bold text-purple-400 mt-1 block">{formatNumero(globalData.kpis.transacoes_registradas)}</span>
+              </div>
+            </div>
+
+            {/* 4 Gráficos Globais */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* Gráfico 1: Top 10 Doadores */}
+              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top 10 Doadores</h3>
+                <ChartCanvas
+                  type="bar"
+                  id="chart-global-doadores"
+                  data={{
+                    labels: globalData.graficos.top_10_doadores.map(d => d.nome.length > 22 ? d.nome.substring(0, 22) + '...' : d.nome),
+                    datasets: [{
+                      label: 'Total Doado (R$)',
+                      data: globalData.graficos.top_10_doadores.map(d => d.total),
+                      backgroundColor: '#3b82f6',
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{ indexAxis: 'y' }}
+                />
+              </div>
+
+              {/* Gráfico 2: Top 10 Candidatos Mais Financiados */}
+              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top 10 Candidatos Mais Financiados</h3>
+                <ChartCanvas
+                  type="bar"
+                  id="chart-global-candidatos"
+                  data={{
+                    labels: globalData.graficos.top_10_candidatos.map(d => `${d.nome.substring(0, 18)} (${d.partido})`),
+                    datasets: [{
+                      label: 'Receita Total (R$)',
+                      data: globalData.graficos.top_10_candidatos.map(d => d.total),
+                      backgroundColor: '#10b981',
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{ indexAxis: 'y' }}
+                />
+              </div>
+
+              {/* Gráfico 3: Distribuição do Volume Arrecadado (Escala Logarítmica) */}
+              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Distribuição do Volume Arrecadado (Escala Logarítmica)</h3>
+                <ChartCanvas
+                  type="bar"
+                  id="chart-global-dist-log"
+                  data={{
+                    labels: globalData.graficos.distribuicao_log.map(d => d.faixa_reais),
+                    datasets: [{
+                      label: 'Candidaturas',
+                      data: globalData.graficos.distribuicao_log.map(d => d.contagem),
+                      backgroundColor: '#6366f1',
+                      borderRadius: 4,
+                    }]
+                  }}
+                />
+              </div>
+
+              {/* Gráfico 4: Autofinanciamento: Os Maiores Investidores da Própria Campanha */}
+              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Autofinanciamento: Os Maiores Investidores da Própria Campanha</h3>
+                <ChartCanvas
+                  type="bar"
+                  id="chart-global-auto"
+                  data={{
+                    labels: globalData.graficos.top_autofinanciamento.map(d => `${d.nome.substring(0, 18)} (${d.partido})`),
+                    datasets: [{
+                      label: 'Aporte Próprio (R$)',
+                      data: globalData.graficos.top_autofinanciamento.map(d => d.total_proprio),
+                      backgroundColor: '#f59e0b',
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{ indexAxis: 'y' }}
+                />
+              </div>
+
+            </div>
+          </div>
+
+
+          {/* ================================================================= */}
+          {/* 2. BARRA DE FILTROS (ALTO CONTRASTE VISUAL)                        */}
+          {/* ================================================================= */}
+          <div className="bg-[#182235] border-2 border-blue-500/80 rounded-xl p-4 shadow-xl">
+            <h2 className="text-sm md:text-base font-black uppercase tracking-widest text-blue-300 mb-3">Filtros</h2>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              
+              {/* Filtro: Ano (Exclusivo, não acumular) */}
+              <div>
+                <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Ano Eleitoral</label>
+                <select
+                  value={ano}
+                  onChange={e => {
+                    setDynamicData(null);
+                    setDynamicLoading(true);
+                    setAno(Number(e.target.value));
+                  }}
+                  className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  {(meta?.anos && meta.anos.length ? meta.anos : ANOS_PADRAO).map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+
+              {/* Filtro: Cargo (Travas Eleitorais 2018/2022 vs 2020/2024) */}
+              <div>
+                <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Cargo em Disputa</label>
+                <select
+                  value={cargo}
+                  onChange={e => {
+                    setDynamicData(null);
+                    setDynamicLoading(true);
+                    setCargo(e.target.value);
+                  }}
+                  className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="TODOS">Todos os Cargos</option>
+                  {cargosValidos.filter(c => c !== "TODOS").map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              {/* Filtro: UF */}
+              <div>
+                <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Estado (UF)</label>
+                <select
+                  value={uf}
+                  onChange={e => {
+                    setDynamicData(null);
+                    setDynamicLoading(true);
+                    setUf(e.target.value);
+                  }}
+                  className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="TODAS">Todas as UFs</option>
+                  {(meta?.ufs && meta.ufs.length ? meta.ufs : UFS_PADRAO).map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+
+              {/* Filtro: Partido */}
+              <div>
+                <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Legenda Partidária</label>
+                <select
+                  value={partido}
+                  onChange={e => {
+                    setDynamicData(null);
+                    setDynamicLoading(true);
+                    setPartido(e.target.value);
+                  }}
+                  className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="TODOS">Todos os Partidos</option>
+                  {(meta?.partidos && meta.partidos.length ? meta.partidos : PARTIDOS_PADRAO).map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+
+              {/* Filtro: Município (Desativado em 2018/2022) */}
+              <div>
+                <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Município</label>
+                <select
+                  value={municipio}
+                  disabled={isGeralYear}
+                  onChange={e => {
+                    setDynamicData(null);
+                    setDynamicLoading(true);
+                    setMunicipio(e.target.value);
+                  }}
+                  className={`w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+                    isGeralYear ? 'opacity-40 cursor-not-allowed' : ''
+                  }`}
+                >
+                  <option value="TODOS">{isGeralYear ? 'Desativado (Eleições Gerais)' : 'Todos os Municípios'}</option>
+                </select>
+              </div>
+
+            </div>
+          </div>
+
+
+          {/* ================================================================= */}
+          {/* 3. SELETOR DINÂMICO: "MOSTRAR 1 POR VEZ" (SEGMENTED CONTROL)       */}
+          {/* ================================================================= */}
+          <div className="flex border-b border-gray-800 space-x-2">
+            {[
+              { id: 'visao-geral', label: 'Visão Geral' },
+              { id: 'custo-do-voto', label: 'Custo do Voto' },
+              { id: 'porta-giratoria', label: 'Porta Giratória' },
+              { id: 'origem-autofinanciamento', label: 'Origem dos Recursos & Autofinanciamento' },
+            ].map(tab => (
+              <button
+                type="button"
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`py-3 px-6 text-sm font-semibold rounded-t-lg transition-all duration-150 border-t-2 ${
+                  activeTab === tab.id
+                    ? 'bg-[#111827] text-blue-400 border-blue-500 border-x border-gray-800'
+                    : 'text-gray-400 hover:text-gray-200 border-transparent hover:bg-gray-800/40'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+
+          {/* ================================================================= */}
+          {/* 4. CONTEÚDO DA SEÇÃO DINÂMICA (APENAS 1 ATIVA)                     */}
+          {/* ================================================================= */}
+          <div className="bg-[#111827] border border-gray-800 rounded-xl p-5 shadow-2xl space-y-6 min-h-[400px]">
+            
+            {dynamicLoading && (
+              <div className="flex items-center justify-center py-28">
+                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            )}
+
+            {/* ------------------------------------------------------------- */}
+            {/* SEÇÃO DINÂMICA 1: VISÃO GERAL                                 */}
+            {/* ------------------------------------------------------------- */}
+            {!dynamicLoading && activeTab === 'visao-geral' && dynamicData?.tab === 'visao-geral' && dynamicData?.kpis && (
+              <div className="space-y-6">
+                
+                {/* 4 KPIs Dinâmicos */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Total Arrecadado</span>
+                    <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatMoeda(dynamicData.kpis.total_arrecadado)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Candidaturas Analisadas</span>
+                    <span className="text-2xl font-bold text-emerald-400 mt-1 block">{formatNumero(dynamicData.kpis.num_candidatos)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Doadores Únicos</span>
+                    <span className="text-2xl font-bold text-amber-400 mt-1 block">{formatNumero(dynamicData.kpis.num_doadores)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Taxa Sucesso: Top 10% vs Bottom 50%</span>
+                    <span className="text-2xl font-bold text-purple-400 mt-1 block">
+                      {(dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0).toFixed(1)}%
+                    </span>
+                    <span className="text-xs text-gray-400 mt-0.5 block">
+                      {(dynamicData.kpis?.taxa_sucesso_decil?.diferenca_sucesso || 0) >= 0 ? '+' : ''}{(dynamicData.kpis?.taxa_sucesso_decil?.diferenca_sucesso || 0).toFixed(1)}% vs Bottom 50% ({(dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0).toFixed(1)}%)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Gráficos Dinâmicos da Visão Geral */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* Top 10 Doadores */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top 10 Doadores</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-vg-doadores"
+                      data={{
+                        labels: (dynamicData.top_10_doadores || []).map(d => {
+                          const n = String(d?.nome || '');
+                          return n.length > 22 ? n.substring(0, 22) + '...' : n;
+                        }),
+                        datasets: [{
+                          label: 'Total Doado (R$)',
+                          data: (dynamicData.top_10_doadores || []).map(d => d.total),
+                          backgroundColor: '#3b82f6',
+                          borderRadius: 4,
+                        }]
+                      }}
+                      options={{ indexAxis: 'y' }}
+                    />
+                  </div>
+
+                  {/* Top 10 Candidatos Mais Financiados */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top 10 Candidatos Mais Financiados</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-vg-candidatos"
+                      data={{
+                        labels: (dynamicData.top_10_candidatos || []).map(d => `${String(d?.nome || '').substring(0, 18)} (${d?.partido || 'S/P'})`),
+                        datasets: [{
+                          label: 'Receita Total (R$)',
+                          data: (dynamicData.top_10_candidatos || []).map(d => d.total),
+                          backgroundColor: '#10b981',
+                          borderRadius: 4,
+                        }]
+                      }}
+                      options={{ indexAxis: 'y' }}
+                    />
+                  </div>
+
+                  {/* Distribuição Logarítmica */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Distribuição do Volume Arrecadado (Escala Logarítmica)</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-vg-dist"
+                      data={{
+                        labels: (dynamicData.distribuicao_log || []).map(d => d.faixa_reais),
+                        datasets: [{
+                          label: 'Candidaturas',
+                          data: (dynamicData.distribuicao_log || []).map(d => d.contagem),
+                          backgroundColor: '#6366f1',
+                          borderRadius: 4,
+                        }]
+                      }}
+                    />
+                  </div>
+
+                  {/* Composição por Origem do Recurso */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Composição por Origem do Recurso</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-vg-origem"
+                      data={{
+                        labels: (dynamicData.origem_recursos || []).map(d => d.origem),
+                        datasets: [{
+                          label: 'Volume (R$)',
+                          data: (dynamicData.origem_recursos || []).map(d => d.total),
+                          backgroundColor: '#ec4899',
+                          borderRadius: 4,
+                        }]
+                      }}
+                    />
+                  </div>
+
+                  {/* Ranking Federativo (Top Estados) */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg lg:col-span-2">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Ranking Federativo (Top Estados)</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-vg-ranking-estados"
+                      data={{
+                        labels: (dynamicData.ranking_estados || []).slice(0, 10).map(d => `${d.uf} - ${NOMES_UFS[d.uf] || d.uf}`),
+                        datasets: [{
+                          label: 'Volume Total (R$)',
+                          data: (dynamicData.ranking_estados || []).slice(0, 10).map(d => d.total),
+                          backgroundColor: '#3b82f6',
+                          borderRadius: 4,
+                        }]
+                      }}
+                      options={{
+                        indexAxis: 'y',
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: {
+                            callbacks: {
+                              label: function(context) {
+                                return `Volume Total: ${formatMoeda(context.raw)}`;
+                              }
+                            }
+                          }
+                        },
+                        scales: {
+                          x: {
+                            ticks: {
+                              color: '#9ca3af',
+                              font: { size: 10 },
+                              callback: function(value) {
+                                if (value >= 1000000000) return 'R$ ' + (value / 1000000000).toFixed(1) + 'B';
+                                if (value >= 1000000) return 'R$ ' + (value / 1000000).toFixed(0) + 'M';
+                                if (value >= 1000) return 'R$ ' + (value / 1000).toFixed(0) + 'k';
+                                return 'R$ ' + value;
+                              }
+                            },
+                            grid: { color: '#1f2937' }
+                          },
+                          y: {
+                            ticks: { color: '#9ca3af', font: { size: 10 } },
+                            grid: { display: false }
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {/* Panorama Federativo e Mapa de Calor do Brasil (Heatmap) */}
+                  <PanoramaFederativoHeatmap data={dynamicData.panorama_uf || []} />
+
+                </div>
+              </div>
+            )}
+
+
+            {/* ------------------------------------------------------------- */}
+            {/* SEÇÃO DINÂMICA 2: CUSTO DO VOTO (SCATTER PLOT ONLY 1 ANO + 1 CARGO) */}
+            {/* ------------------------------------------------------------- */}
+            {!dynamicLoading && activeTab === 'custo-do-voto' && (
+              <div className="space-y-6">
+                {(!cargo || cargo === 'TODOS') ? (
+                  <div className="p-8 text-center text-amber-400 border border-amber-500/40 rounded-lg">
+                    Selecione obrigatoriamente 1 Cargo específico na barra de filtros superior para renderizar o Custo do Voto.
+                  </div>
+                ) : (dynamicData?.tab === 'custo-do-voto' && dynamicData?.resumo) ? (
+                  <>
+                    {/* Resumo do Recorte */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                        <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Piso de Viabilidade</span>
+                        <span className="text-2xl font-bold text-emerald-400 mt-1 block">{formatMoeda(dynamicData?.piso_viabilidade || 0)}</span>
+                      </div>
+                      <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                        <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Mediana Custo do Voto</span>
+                        <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatMoeda(dynamicData?.resumo?.mediana_custo_voto || 0)}/voto</span>
+                      </div>
+                      <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                        <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Candidatos Eleitos</span>
+                        <span className="text-2xl font-bold text-purple-400 mt-1 block">{formatNumero(dynamicData?.resumo?.total_eleitos || 0)}</span>
+                      </div>
+                      <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                        <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Total de Candidatos</span>
+                        <span className="text-2xl font-bold text-gray-300 mt-1 block">{formatNumero(dynamicData?.resumo?.total_candidatos || 0)}</span>
+                      </div>
+                    </div>
+
+                    {/* Gráfico de Dispersão: Custo do Voto (Scatter Plot) */}
+                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Custo do Voto: Total de Votos vs. Receita Arrecadada</h3>
+                      <div className="h-[450px]">
+                        <ChartCanvas
+                          type="scatter"
+                          id="chart-scatter-custo-voto"
+                          data={{
+                            datasets: [
+                              {
+                                label: 'Eleito',
+                                data: (dynamicData?.pontos || []).filter(p => p.status_eleicao === 'Eleito').map(p => ({
+                                  x: p.total_votos,
+                                  y: p.total_receita,
+                                  nome: p.nome_candidato,
+                                  partido: p.partido,
+                                  custo: p.custo_voto
+                                })),
+                                backgroundColor: '#10b981',
+                                pointRadius: 5,
+                                pointHoverRadius: 7,
+                              },
+                              {
+                                label: 'Não Eleito',
+                                data: (dynamicData?.pontos || []).filter(p => p.status_eleicao !== 'Eleito').map(p => ({
+                                  x: p.total_votos,
+                                  y: p.total_receita,
+                                  nome: p.nome_candidato,
+                                  partido: p.partido,
+                                  custo: p.custo_voto
+                                })),
+                                backgroundColor: '#ef4444',
+                                pointRadius: 4,
+                                pointHoverRadius: 6,
+                              }
+                            ]
+                          }}
+                          options={{
+                            scales: {
+                              x: {
+                                type: 'linear',
+                                position: 'bottom',
+                                title: { display: true, text: 'Total de Votos Obtidos', color: '#9ca3af' },
+                                grid: { color: '#1f2937' },
+                                ticks: { color: '#9ca3af' }
+                              },
+                              y: {
+                                type: 'linear',
+                                title: { display: true, text: 'Receita Total Arrecadada (R$)', color: '#9ca3af' },
+                                grid: { color: '#1f2937' },
+                                ticks: { color: '#9ca3af' }
+                              }
+                            },
+                            plugins: {
+                              tooltip: {
+                                callbacks: {
+                                label: function(context) {
+                                    const raw = context.raw;
+                                    return `${raw.nome} (${raw.partido}): ${formatMoeda(raw.y)} | ${formatNumero(raw.x)} votos (${formatMoeda(raw.custo)}/voto)`;
+                                  }
+                                }
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            )}
+
+
+            {/* ------------------------------------------------------------- */}
+            {/* SEÇÃO DINÂMICA 3: PORTA GIRATÓRIA (REGEX HIGIENIZADO)         */}
+            {/* ------------------------------------------------------------- */}
+            {!dynamicLoading && activeTab === 'porta-giratoria' && dynamicData?.tab === 'porta-giratoria' && dynamicData?.kpis && (
+              <div className="space-y-6">
+                
+                {/* 4 KPIs Porta Giratória */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume Total em Retorno</span>
+                    <span className="text-2xl font-bold text-rose-400 mt-1 block">{formatMoeda(dynamicData.kpis?.volume_total_retorno || 0)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Campanhas com Ocorrência</span>
+                    <span className="text-2xl font-bold text-amber-400 mt-1 block">{formatNumero(dynamicData.kpis?.campanhas_com_ocorrencia || 0)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Maior Taxa de Retorno Individual</span>
+                    <span className="text-2xl font-bold text-purple-400 mt-1 block">{formatNumero(Number(dynamicData.kpis?.maior_taxa_retorno || 0).toFixed(1))}%</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Transações Identificadas</span>
+                    <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatNumero(dynamicData.kpis?.transacoes_identificadas || 0)}</span>
+                  </div>
+                </div>
+
+                {/* Gráficos Porta Giratória */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* Comparativo Bi-direcional */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Comparativo Bi-direcional: Doação vs. Fornecimento</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-pg-bidirecional"
+                      data={{
+                        labels: (dynamicData.comparativo_bidirecional || []).map(d => {
+                          const ent = String(d?.entidade || 'Entidade');
+                          return ent.length > 20 ? ent.substring(0, 20) + '...' : ent;
+                        }),
+                        datasets: [
+                          {
+                            label: 'Valor Doado (R$)',
+                            data: (dynamicData.comparativo_bidirecional || []).map(d => Number(d?.total_doado || 0)),
+                            backgroundColor: '#3b82f6',
+                            borderRadius: 4,
+                          },
+                          {
+                            label: 'Valor Fornecido (R$)',
+                            data: (dynamicData.comparativo_bidirecional || []).map(d => Number(d?.total_fornecedor || 0)),
+                            backgroundColor: '#f43f5e',
+                            borderRadius: 4,
+                          }
+                        ]
+                      }}
+                      options={{ indexAxis: 'y' }}
+                    />
+                  </div>
+
+                  {/* Ranking de Retorno */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top Fornecedores em Retorno Financeiro</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-pg-ranking"
+                      data={{
+                        labels: (dynamicData.ranking_porta_giratoria || []).slice(0, 10).map(d => {
+                          const doador = String(d?.nome_doador || 'Doador');
+                          const cand = String(d?.nome_candidato || 'Candidato');
+                          return `${doador.substring(0, 16)} ➔ ${cand.substring(0, 12)}`;
+                        }),
+                        datasets: [{
+                          label: 'Faturamento Fornecedor (R$)',
+                          data: (dynamicData.ranking_porta_giratoria || []).slice(0, 10).map(d => Number(d?.total_fornecedor || 0)),
+                          backgroundColor: '#f59e0b',
+                          borderRadius: 4,
+                        }]
+                      }}
+                      options={{ indexAxis: 'y' }}
+                    />
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+
+            {/* ------------------------------------------------------------- */}
+            {/* SEÇÃO DINÂMICA 4: ORIGEM DOS RECURSOS & AUTOFINANCIAMENTO      */}
+            {/* ------------------------------------------------------------- */}
+            {!dynamicLoading && activeTab === 'origem-autofinanciamento' && dynamicData?.tab === 'origem-autofinanciamento' && dynamicData?.kpis && (
+              <div className="space-y-6">
+                
+                {/* 4 KPIs Autofinanciamento */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Taxa de Autofinanciamento</span>
+                    <span className="text-2xl font-bold text-amber-400 mt-1 block">{(dynamicData.kpis?.taxa_autofinanciamento || 0).toFixed(1)}%</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume Autofinanciado</span>
+                    <span className="text-2xl font-bold text-emerald-400 mt-1 block">{formatMoeda(dynamicData.kpis?.volume_autofinanciamento || 0)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume de Terceiros</span>
+                    <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatMoeda(dynamicData.kpis?.volume_terceiros || 0)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Sucesso: Autofinanciados vs Terceiros</span>
+                    <span className="text-2xl font-bold text-purple-400 mt-1 block">
+                      {(dynamicData.kpis?.taxa_sucesso_auto || 0).toFixed(1)}%
+                    </span>
+                    <span className="text-xs text-gray-400 mt-0.5 block">
+                      vs Terceiros ({(dynamicData.kpis?.taxa_sucesso_terceiros || 0).toFixed(1)}%)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Gráficos Autofinanciamento */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* Maiores Investidores da Própria Campanha */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Autofinanciamento: Os Maiores Investidores da Própria Campanha</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-auto-top"
+                      data={{
+                        labels: (dynamicData.top_investidores_proprios || []).map(d => `${String(d?.nome || '').substring(0, 18)} (${d?.partido || 'S/P'})`),
+                        datasets: [{
+                          label: 'Aporte Próprio (R$)',
+                          data: (dynamicData.top_investidores_proprios || []).map(d => d.total),
+                          backgroundColor: '#f59e0b',
+                          borderRadius: 4,
+                        }]
+                      }}
+                      options={{ indexAxis: 'y' }}
+                    />
+                  </div>
+
+                  {/* Evolução Histórica */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Evolução do Volume Financeiro por Origem</h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-auto-evolucao"
+                      data={{
+                        labels: Array.from(new Set((dynamicData.evolucao_historica || []).map(d => d.ano))).sort(),
+                        datasets: [
+                          {
+                            label: 'Recursos Próprios (R$)',
+                            data: Array.from(new Set((dynamicData.evolucao_historica || []).map(d => d.ano))).sort().map(a => {
+                              const item = (dynamicData.evolucao_historica || []).find(d => d.ano === a && d.tipo === 'Recursos Próprios');
+                              return item ? item.total : 0;
+                            }),
+                            backgroundColor: '#f59e0b',
+                            borderRadius: 4,
+                          },
+                          {
+                            label: 'Terceiros (R$)',
+                            data: Array.from(new Set((dynamicData.evolucao_historica || []).map(d => d.ano))).sort().map(a => {
+                              const item = (dynamicData.evolucao_historica || []).find(d => d.ano === a && d.tipo === 'Terceiros');
+                              return item ? item.total : 0;
+                            }),
+                            backgroundColor: '#3b82f6',
+                            borderRadius: 4,
+                          }
+                        ]
+                      }}
+                    />
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+          </div>
+
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    );
+  </script>
+</body>
+</html>
