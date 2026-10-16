@@ -377,7 +377,7 @@ class TestMethodologyAuditorCriteria(unittest.TestCase):
     def test_garantia_sem_graficos_circulares(self) -> None:
         """Assegura categoricamente a ausência de gráficos pie/donut em todo o repositório."""
         import glob
-        arquivos = glob.glob("pages/*.py") + glob.glob("src/*.py") + ["app.py"]
+        arquivos = [f for f in (glob.glob("src/*.py") + glob.glob("api/*.py") + ["frontend/index.html"]) if Path(f).exists()]
         for arq in arquivos:
             with open(arq, "r", encoding="utf-8") as f:
                 conteudo = f.read()
