@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR" class="dark">
 <head>
+  <link rel="icon" href="data:,">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PACD - Painel Eleitoral</title>
@@ -364,12 +365,251 @@
       );
     }
 
+  const DropdownEstados = ({ uf, setUf, disabled, ufsValidas }) => {
+      const [aberto, setAberto] = React.useState(false);
+
+      const toggleUf = (estado) => {
+        if (estado === "TODAS") {
+          setUf(["TODAS"]);
+          setAberto(false);
+          return;
+        }
+        // Remove "TODAS" se o usuário clicar em um estado específico
+        let novaLista = uf.filter(u => u !== "TODAS");
+        
+        if (novaLista.includes(estado)) {
+          novaLista = novaLista.filter(u => u !== estado);
+          if (novaLista.length === 0) novaLista = ["TODAS"]; // Volta pro padrão se esvaziar
+        } else {
+          novaLista.push(estado);
+        }
+        setUf(novaLista);
+      };
+
+      return (
+        <div className="relative">
+          <label className={`text-xs uppercase font-bold tracking-wider block mb-1 ${disabled ? 'text-slate-600' : 'text-blue-300'}`}>
+            Estado (UF)
+          </label>
+          <div 
+            onClick={() => !disabled && setAberto(!aberto)}
+            className={`w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white flex justify-between items-center cursor-pointer transition-colors ${disabled ? 'opacity-50 cursor-not-allowed bg-slate-800 border-slate-700' : 'hover:border-blue-400'}`}
+          >
+            <span className="truncate">{uf.includes("TODAS") ? "Todas as UFs" : uf.join(", ")}</span>
+            <span className="text-blue-400 text-xs">{aberto ? '▲' : '▼'}</span>
+          </div>
+          
+          {aberto && !disabled && (
+            <div className="absolute z-50 w-full mt-2 bg-[#1e293b] border border-blue-500/30 rounded-lg shadow-2xl p-3">
+              <div 
+                onClick={() => toggleUf("TODAS")}
+                className={`px-3 py-2 rounded-md cursor-pointer text-sm text-center mb-3 transition-colors ${uf.includes("TODAS") ? 'bg-blue-600 text-white font-bold' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+              >
+                Selecionar Todas as UFs
+              </div>
+              <div className="grid grid-cols-4 gap-2 border-t border-slate-600 pt-3">
+                {ufsValidas.map(estado => (
+                  <div 
+                    key={estado}
+                    onClick={() => toggleUf(estado)}
+                    className={`px-1 py-1.5 rounded cursor-pointer text-center text-xs font-semibold transition-transform active:scale-95 ${uf.includes(estado) ? 'bg-emerald-500 text-white shadow-md' : 'bg-[#0f172a] text-slate-400 border border-slate-700 hover:bg-slate-600 hover:text-white'}`}
+                  >
+                    {estado}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+  
+  const TabelaTopDoadoresExpandivel = ({ doadores }) => {
+    const [doadorExpandido, setDoadorExpandido] = useState(null);
+
+    if (!doadores || doadores.length === 0) {
+      return <div className="text-gray-400 text-sm py-4 text-center">Nenhum dado encontrado.</div>;
+    }
+
+    const toggleExpand = (nomeDoador) => {
+      setDoadorExpandido(doadorExpandido === nomeDoador ? null : nomeDoador);
+    };
+
+    return (
+      <div className="w-full overflow-hidden rounded-lg border border-gray-700/60 bg-[#111827]">
+        <table className="w-full text-left text-sm text-gray-300">
+          <thead className="bg-[#1f2937]/80 text-xs uppercase text-blue-300 border-b border-gray-700">
+            <tr>
+              <th scope="col" className="px-4 py-3">Doador (Entidade / Pessoa)</th>
+              <th scope="col" className="px-4 py-3 text-right">Volume Total Doado</th>
+              <th scope="col" className="px-4 py-3 text-center w-24">Detalhes</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-700/50">
+            {doadores.map((doador, idx) => {
+              const isExpanded = doadorExpandido === doador.nome;
+              return (
+                <React.Fragment key={idx}>
+                  {/* Linha Principal do Doador */}
+                  <tr 
+                    onClick={() => toggleExpand(doador.nome)}
+                    className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : 'bg-transparent'}`}
+                  >
+                    <td className="px-4 py-3 font-semibold truncate max-w-[200px]" title={doador.nome}>
+                      <span className="text-gray-400 mr-2 text-xs">{idx + 1}º</span>
+                      {doador.nome}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-blue-400">
+                      {formatMoeda(doador.total)}
+                    </td>
+                    <td className="px-4 py-3 text-center text-gray-500">
+                      {isExpanded ? '▼' : '▶'}
+                    </td>
+                  </tr>
+
+                  {/* Sub-tabela Expandida (Destinatários) */}
+                  {isExpanded && doador.destinatarios && (
+                    <tr className="bg-[#0f172a]/80 border-l-2 border-l-blue-500">
+                      <td colSpan="3" className="p-0">
+                        <div className="px-6 py-4 max-h-[300px] overflow-y-auto">
+                          <div className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">
+                            Fluxo de Financiamento ({doador.destinatarios.length} candidaturas)
+                          </div>
+                          <table className="w-full text-xs text-gray-300">
+                            <thead className="text-gray-500 border-b border-gray-700/50">
+                              <tr>
+                                <th className="py-2 text-left font-medium">Candidato Beneficiado</th>
+                                <th className="py-2 text-left font-medium w-24">Partido</th>
+                                <th className="py-2 text-left font-medium w-32">Cargo</th>
+                                <th className="py-2 text-right font-medium w-32">Valor Recebido</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800/50">
+                              {doador.destinatarios.slice(0, 50).map((dest, i) => (
+                                <tr key={i} className="hover:bg-gray-800/40 transition-colors">
+                                  <td className="py-2 truncate max-w-[150px]" title={dest.candidato}>{dest.candidato}</td>
+                                  <td className="py-2">
+                                    <span className="bg-gray-800 px-2 py-0.5 rounded border border-gray-700 text-[10px]">
+                                      {dest.partido}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 text-gray-400">{dest.cargo}</td>
+                                  <td className="py-2 text-right text-emerald-400 font-semibold">{formatMoeda(dest.valor)}</td>
+                                </tr>
+                              ))}
+                              {doador.destinatarios.length > 50 && (
+                                <tr className="bg-[#0f172a]/40">
+                                  <td colSpan="4" className="py-3 text-center text-xs text-gray-500 font-medium italic border-t border-gray-800/50">
+                                    ... e mais {formatNumero(doador.destinatarios.length - 50)} destinatários menores ocultados.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const TabelaTopCandidatosExpandivel = ({ candidatos }) => {
+    const [candExpandido, setCandExpandido] = useState(null);
+
+    if (!candidatos || candidatos.length === 0) return <div className="text-gray-400 text-sm py-4 text-center">Nenhum dado encontrado.</div>;
+
+    const toggleExpand = (nome) => setCandExpandido(candExpandido === nome ? null : nome);
+
+    return (
+      <div className="w-full overflow-hidden rounded-lg border border-gray-700/60 bg-[#111827]">
+        <table className="w-full text-left text-sm text-gray-300">
+          <thead className="bg-[#1f2937]/80 text-xs uppercase text-emerald-300 border-b border-gray-700">
+            <tr>
+              <th className="px-4 py-3">Candidato</th>
+              <th className="px-4 py-3 text-right">Receita Total</th>
+              <th className="px-4 py-3 text-center w-24">Origens</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-700/50">
+            {candidatos.map((cand, idx) => {
+              const isExpanded = candExpandido === cand.nome;
+              return (
+                <React.Fragment key={idx}>
+                  {/* Linha Principal - Apenas Nome para evitar texto cortado */}
+                  <tr onClick={() => toggleExpand(cand.nome)} className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : ''}`}>
+                    <td className="px-4 py-3 font-semibold truncate max-w-[280px]" title={cand.nome}>
+                      <span className="text-gray-400 mr-2 text-xs">{idx + 1}º</span>
+                      {cand.nome}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-400">{formatMoeda(cand.total)}</td>
+                    <td className="px-4 py-3 text-center text-gray-500">{isExpanded ? '▼' : '▶'}</td>
+                  </tr>
+                  
+                  {/* Sub-tabela Expandida */}
+                  {isExpanded && cand.doadores && (
+                    <tr className="bg-[#0f172a]/80 border-l-2 border-l-emerald-500">
+                      <td colSpan="3" className="p-0">
+                        <div className="px-6 py-4 max-h-[300px] overflow-y-auto">
+                          
+                          {/* NOVO: Badges com informações do Candidato (Partido, Cargo, UF) */}
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-[10px] font-bold uppercase text-gray-300 shadow-sm">
+                              <span className="text-gray-500 mr-1">Partido:</span>{cand.partido}
+                            </span>
+                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-[10px] font-bold uppercase text-gray-300 shadow-sm">
+                              <span className="text-gray-500 mr-1">Cargo:</span>{cand.cargo}
+                            </span>
+                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-[10px] font-bold uppercase text-gray-300 shadow-sm">
+                              <span className="text-gray-500 mr-1">UF:</span>{cand.uf}
+                            </span>
+                          </div>
+
+                          <div className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">
+                            Principais Doadores ({cand.doadores.length} origens)
+                          </div>
+                          <table className="w-full text-xs text-gray-300">
+                            <tbody className="divide-y divide-gray-800/50">
+                              {cand.doadores.slice(0, 50).map((d, i) => (
+                                <tr key={i} className="hover:bg-gray-800/40 transition-colors">
+                                  <td className="py-2">{d.doador}</td>
+                                  <td className="py-2 text-right text-blue-400 font-semibold">{formatMoeda(d.valor)}</td>
+                                </tr>
+                              ))}
+                              {cand.doadores.length > 50 && (
+                                <tr className="bg-[#0f172a]/40">
+                                  <td colSpan="2" className="py-3 text-center text-xs text-gray-500 font-medium italic border-t border-gray-800/50">
+                                    ... e mais {formatNumero(cand.doadores.length - 50)} origens menores ocultadas.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
     function App() {
       // Metadados e Filtros
+      const [apenasPrivado, setApenasPrivado] = useState(true);
       const [meta, setMeta] = useState(null);
       const [ano, setAno] = useState(ANOS_PADRAO[0]);
       const [cargo, setCargo] = useState("TODOS");
-      const [uf, setUf] = useState("TODAS");
+      const [uf, setUf] = useState(["TODAS"]);
       const [partido, setPartido] = useState("TODOS");
       const [municipio, setMunicipio] = useState("TODOS");
 
@@ -390,17 +630,23 @@
         }
       };
 
+      useEffect(() => {
+        if (cargo === 'PRESIDENTE') {
+          setUf(["TODAS"]);
+        }
+      }, [cargo]);
+
       // Carrega metadados iniciais e dados globais
       useEffect(() => {
         Promise.all([
           fetch('/api/meta/filtros').then(r => r.json()),
-          fetch('/api/global').then(r => r.json())
+          fetch(`/api/global?apenas_privado=${apenasPrivado}`).then(r => r.json())
         ]).then(([metaRes, globRes]) => {
           setMeta(metaRes);
           setGlobalData(globRes);
           setLoading(false);
         }).catch(err => console.error("Erro ao carregar dados iniciais:", err));
-      }, []);
+      }, [apenasPrivado]);
 
       // Atualiza cargos disponíveis quando ano muda (Travas 2018/2022 vs 2020/2024)
       useEffect(() => {
@@ -418,48 +664,66 @@
       // Carrega dados da seção dinâmica ativa
       useEffect(() => {
         if (!meta) return;
-        let url = '';
-        const params = new URLSearchParams();
-        params.append("ano", ano);
-        if (cargo && cargo !== "TODOS") params.append("cargo", cargo);
-        if (uf && uf !== "TODAS") params.append("uf", uf);
-        if (partido && partido !== "TODOS") params.append("partido", partido);
-        if (municipio && municipio !== "TODOS") params.append("municipio", municipio);
 
-        const currentTab = activeTab;
-
-        if (currentTab === "visao-geral") {
-          url = `/api/visao-geral?${params.toString()}`;
-        } else if (currentTab === "custo-do-voto") {
-          if (!cargo || cargo === "TODOS") {
-            setDynamicData(null);
-            setDynamicLoading(false);
-            return;
+        const timer = setTimeout(() => {
+          let url = '';
+          const params = new URLSearchParams();
+        
+          params.append("ano", ano);
+          if (cargo && cargo !== "TODOS") params.append("cargo", cargo);
+          
+          if (Array.isArray(uf)){
+            const UFsvalidas = uf.filter(u => u !== "TODAS")
+            if (UFsvalidas.length > 0) {
+              params.append("uf", UFsvalidas.join(","));
+            }
+          } else if (uf && uf !== "TODAS") {
+            params.append("uf", uf);
           }
-          url = `/api/custo-do-voto?${params.toString()}`;
-        } else if (currentTab === "porta-giratoria") {
-          url = `/api/porta-giratoria?${params.toString()}`;
-        } else if (currentTab === "origem-autofinanciamento") {
-          url = `/api/origem-autofinanciamento?${params.toString()}`;
-        }
 
-        if (url) {
-          setDynamicLoading(true);
-          fetch(url)
-            .then(r => {
-              if (!r.ok) throw new Error("HTTP " + r.status);
-              return r.json();
-            })
-            .then(data => {
-              setDynamicData({ tab: currentTab, ...data });
+          if (partido && partido !== "TODOS") params.append("partido", partido);
+          if (municipio && municipio !== "TODOS") params.append("municipio", municipio);
+
+          params.append("apenas_privado", apenasPrivado);
+
+          const currentTab = activeTab;
+
+          if (currentTab === "visao-geral") {
+            url = `/api/visao-geral?${params.toString()}`;
+          } else if (currentTab === "custo-do-voto") {
+            if (!cargo || cargo === "TODOS") {
+              setDynamicData(null);
               setDynamicLoading(false);
-            })
-            .catch(err => {
-              console.error("Erro ao carregar seção dinâmica:", err);
-              setDynamicLoading(false);
-            });
-        }
-      }, [activeTab, ano, cargo, uf, partido, municipio, meta]);
+              return;
+            }
+            url = `/api/custo-do-voto?${params.toString()}`;
+          } else if (currentTab === "porta-giratoria") {
+            url = `/api/porta-giratoria?${params.toString()}`;
+          } else if (currentTab === "origem-autofinanciamento") {
+            url = `/api/origem-autofinanciamento?${params.toString()}`;
+          }
+
+          if (url) {
+            setDynamicLoading(true);
+            fetch(url)
+              .then(r => {
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return r.json();
+              })
+              .then(data => {
+                setDynamicData({ tab: currentTab, ...data });
+                setDynamicLoading(false);
+              })
+              .catch(err => {
+                console.error("Erro ao carregar seção dinâmica:", err);
+                setDynamicLoading(false);
+              });
+          }
+        }, 300); // Debounce de 300ms
+        
+        return () => clearTimeout(timer);
+
+      }, [activeTab, ano, cargo, uf, partido, municipio, meta, apenasPrivado]);
 
       if (loading || !globalData) {
         return (
@@ -485,6 +749,22 @@
                 <h1 className="text-xl md:text-2xl font-black tracking-wider text-white uppercase">PACD — PAINEL DE FINANCIAMENTO ELEITORAL</h1>
                 <span className="text-xs text-blue-400 font-mono tracking-widest uppercase">BASE ELEITORAL BRASILEIRA 2018–2024</span>
               </div>
+            </div>
+            {/* O BOTÃO GLOBAL AQUI */}
+            <div className="flex items-center space-x-3 bg-[#0f172a] border border-blue-500/40 rounded-lg px-4 py-2">
+              <span className="text-sm font-bold uppercase tracking-wider text-blue-300">Análise de Origem:</span>
+              <button
+                type="button"
+                onClick={() => setApenasPrivado(!apenasPrivado)}
+                className={`w-14 h-7 flex items-center rounded-full p-1 duration-300 cursor-pointer ${
+                  apenasPrivado ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
+                }`}
+              >
+                <div className="bg-white w-5 h-5 rounded-full shadow-md transform transition"></div>
+              </button>
+              <span className="text-sm text-slate-300 font-semibold">
+                  {apenasPrivado ? 'Somente Financiamento Privado' : 'Todos os Recursos (Inclui Fundos)'}
+              </span>
             </div>
           </header>
           
@@ -516,42 +796,26 @@
             {/* 4 Gráficos Globais */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
-              {/* Gráfico 1: Top 10 Doadores */}
-              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top 10 Doadores</h3>
-                <ChartCanvas
-                  type="bar"
-                  id="chart-global-doadores"
-                  data={{
-                    labels: globalData.graficos.top_10_doadores.map(d => d.nome.length > 22 ? d.nome.substring(0, 22) + '...' : d.nome),
-                    datasets: [{
-                      label: 'Total Doado (R$)',
-                      data: globalData.graficos.top_10_doadores.map(d => d.total),
-                      backgroundColor: '#3b82f6',
-                      borderRadius: 4,
-                    }]
-                  }}
-                  options={{ indexAxis: 'y' }}
-                />
+              {/* Gráfico 1: Top 10 Doadores (Tabela Expansível - BLOCO GLOBAL FIXO) */}
+              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg flex flex-col h-full">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide flex justify-between items-center">
+                  Top 10 Maiores Doadores Globais
+                  <span className="text-[10px] font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">Clique na linha para expandir</span>
+                </h3>
+                <div className="flex-1">
+                  <TabelaTopDoadoresExpandivel doadores={globalData?.graficos?.top_10_doadores || []} />
+                </div>
               </div>
 
               {/* Gráfico 2: Top 10 Candidatos Mais Financiados */}
-              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top 10 Candidatos Mais Financiados</h3>
-                <ChartCanvas
-                  type="bar"
-                  id="chart-global-candidatos"
-                  data={{
-                    labels: globalData.graficos.top_10_candidatos.map(d => `${d.nome.substring(0, 18)} (${d.partido})`),
-                    datasets: [{
-                      label: 'Receita Total (R$)',
-                      data: globalData.graficos.top_10_candidatos.map(d => d.total),
-                      backgroundColor: '#10b981',
-                      borderRadius: 4,
-                    }]
-                  }}
-                  options={{ indexAxis: 'y' }}
-                />
+              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg flex flex-col h-full">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide flex justify-between items-center">
+                  Top 10 Candidatos Mais Financiados
+                  <span className="text-[10px] font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">Clique para auditar origem</span>
+                </h3>
+                <div className="flex-1">
+                  <TabelaTopCandidatosExpandivel candidatos={globalData?.graficos?.top_10_candidatos || []} />
+                </div>
               </div>
 
               {/* Gráfico 3: Distribuição do Volume Arrecadado (Escala Logarítmica) */}
@@ -600,7 +864,7 @@
           {/* ================================================================= */}
           <div className="bg-[#182235] border-2 border-blue-500/80 rounded-xl p-4 shadow-xl">
             <h2 className="text-sm md:text-base font-black uppercase tracking-widest text-blue-300 mb-3">Filtros</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               
               {/* Filtro: Ano (Exclusivo, não acumular) */}
               <div>
@@ -637,19 +901,12 @@
 
               {/* Filtro: UF */}
               <div>
-                <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Estado (UF)</label>
-                <select
-                  value={uf}
-                  onChange={e => {
-                    setDynamicData(null);
-                    setDynamicLoading(true);
-                    setUf(e.target.value);
-                  }}
-                  className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
-                >
-                  <option value="TODAS">Todas as UFs</option>
-                  {(meta?.ufs && meta.ufs.length ? meta.ufs : UFS_PADRAO).map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <DropdownEstados 
+                  uf={uf} 
+                  setUf={setUf} 
+                  disabled={cargo === 'PRESIDENTE'} 
+                  ufsValidas={meta?.ufs || []} 
+                />
               </div>
 
               {/* Filtro: Partido */}
@@ -669,7 +926,7 @@
                 </select>
               </div>
 
-              {/* Filtro: Município (Desativado em 2018/2022) */}
+              {/* {Filtro: Município (Desativado)}
               <div>
                 <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Município</label>
                 <select
@@ -686,7 +943,7 @@
                 >
                   <option value="TODOS">{isGeralYear ? 'Desativado (Eleições Gerais)' : 'Todos os Municípios'}</option>
                 </select>
-              </div>
+              </div> */}
 
             </div>
           </div>
@@ -763,45 +1020,27 @@
                 {/* Gráficos Dinâmicos da Visão Geral */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   
-                  {/* Top 10 Doadores */}
-                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top 10 Doadores</h3>
-                    <ChartCanvas
-                      type="bar"
-                      id="chart-vg-doadores"
-                      data={{
-                        labels: (dynamicData.top_10_doadores || []).map(d => {
-                          const n = String(d?.nome || '');
-                          return n.length > 22 ? n.substring(0, 22) + '...' : n;
-                        }),
-                        datasets: [{
-                          label: 'Total Doado (R$)',
-                          data: (dynamicData.top_10_doadores || []).map(d => d.total),
-                          backgroundColor: '#3b82f6',
-                          borderRadius: 4,
-                        }]
-                      }}
-                      options={{ indexAxis: 'y' }}
-                    />
+                  {/* Top 10 Doadores (Tabela Expansível - ABA VISÃO GERAL) */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg flex flex-col h-full">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide flex justify-between items-center">
+                      Top 10 Maiores Doadores
+                      <span className="text-[10px] font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">Clique na linha para expandir</span>
+                    </h3>
+                    <div className="flex-1">
+                      {/* O ponto de interrogação abaixo blinda o sistema contra erros caso o dado demore a carregar */}
+                      <TabelaTopDoadoresExpandivel doadores={dynamicData?.top_10_doadores || []} />
+                    </div>
                   </div>
 
                   {/* Top 10 Candidatos Mais Financiados */}
-                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top 10 Candidatos Mais Financiados</h3>
-                    <ChartCanvas
-                      type="bar"
-                      id="chart-vg-candidatos"
-                      data={{
-                        labels: (dynamicData.top_10_candidatos || []).map(d => `${String(d?.nome || '').substring(0, 18)} (${d?.partido || 'S/P'})`),
-                        datasets: [{
-                          label: 'Receita Total (R$)',
-                          data: (dynamicData.top_10_candidatos || []).map(d => d.total),
-                          backgroundColor: '#10b981',
-                          borderRadius: 4,
-                        }]
-                      }}
-                      options={{ indexAxis: 'y' }}
-                    />
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg flex flex-col h-full">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide flex justify-between items-center">
+                      Top 10 Candidatos Mais Financiados
+                      <span className="text-[10px] font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">Clique para auditar origem</span>
+                    </h3>
+                    <div className="flex-1">
+                      <TabelaTopCandidatosExpandivel candidatos={dynamicData?.top_10_candidatos || []} />
+                    </div>
                   </div>
 
                   {/* Distribuição Logarítmica */}
@@ -822,12 +1061,13 @@
                     />
                   </div>
 
-                  {/* Composição por Origem do Recurso */}
-                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Composição por Origem do Recurso</h3>
-                    <ChartCanvas
-                      type="bar"
-                      id="chart-vg-origem"
+                  {/* Composição por Origem do Recurso - Oculto se Apenas Privado */}
+                  {!apenasPrivado && (
+                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Composição por Origem do Recurso</h3>
+                      <ChartCanvas
+                        type="bar"
+                        id="chart-vg-origem"
                       data={{
                         labels: (dynamicData.origem_recursos || []).map(d => d.origem),
                         datasets: [{
@@ -839,60 +1079,66 @@
                       }}
                     />
                   </div>
+                  )}
 
-                  {/* Ranking Federativo (Top Estados) */}
-                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg lg:col-span-2">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Ranking Federativo (Top Estados)</h3>
-                    <ChartCanvas
-                      type="bar"
-                      id="chart-vg-ranking-estados"
-                      data={{
-                        labels: (dynamicData.ranking_estados || []).slice(0, 10).map(d => `${d.uf} - ${NOMES_UFS[d.uf] || d.uf}`),
-                        datasets: [{
-                          label: 'Volume Total (R$)',
-                          data: (dynamicData.ranking_estados || []).slice(0, 10).map(d => d.total),
-                          backgroundColor: '#3b82f6',
-                          borderRadius: 4,
-                        }]
-                      }}
-                      options={{
-                        indexAxis: 'y',
-                        plugins: {
-                          legend: { display: false },
-                          tooltip: {
-                            callbacks: {
-                              label: function(context) {
-                                return `Volume Total: ${formatMoeda(context.raw)}`;
+                  {/* Ranking Federativo (Top Estados) - Oculto se PRESIDENTE ou um só Estado*/}
+                  {cargo !== 'PRESIDENTE' && (uf.includes('TODAS') || uf.length > 1) && (
+                  <React.Fragment>
+                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg lg:col-span-2">
+                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Ranking Federativo (Top Estados)</h3>
+                      <ChartCanvas
+                        type="bar"
+                        id="chart-vg-ranking-estados"
+                        data={{
+                          labels: (dynamicData.panorama_uf || []).slice(0, 10).map(d => d.uf),
+                          datasets: [{
+                            label: 'Volume Total (R$)',
+                            data: (dynamicData.panorama_uf || []).slice(0, 10).map(d => d.total),
+                            backgroundColor: '#3b82f6',
+                            borderRadius: 4,
+                          }]
+                        }}
+                        options={{
+                          indexAxis: 'y',
+                          plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                              callbacks: {
+                                label: function(context) {
+                                  return `Volume Total: ${formatMoeda(context.raw)}`;
+                                }
                               }
                             }
-                          }
-                        },
-                        scales: {
-                          x: {
-                            ticks: {
-                              color: '#9ca3af',
-                              font: { size: 10 },
-                              callback: function(value) {
-                                if (value >= 1000000000) return 'R$ ' + (value / 1000000000).toFixed(1) + 'B';
-                                if (value >= 1000000) return 'R$ ' + (value / 1000000).toFixed(0) + 'M';
-                                if (value >= 1000) return 'R$ ' + (value / 1000).toFixed(0) + 'k';
-                                return 'R$ ' + value;
-                              }
-                            },
-                            grid: { color: '#1f2937' }
                           },
-                          y: {
-                            ticks: { color: '#9ca3af', font: { size: 10 } },
-                            grid: { display: false }
+                          scales: {
+                            x: {
+                              ticks: {
+                                color: '#9ca3af',
+                                font: { size: 10 },
+                                callback: function(value) {
+                                  if (value >= 1000000000) return 'R$ ' + (value / 1000000000).toFixed(1) + 'B';
+                                  if (value >= 1000000) return 'R$ ' + (value / 1000000).toFixed(0) + 'M';
+                                  if (value >= 1000) return 'R$ ' + (value / 1000).toFixed(0) + 'k';
+                                  return 'R$ ' + value;
+                                }
+                              },
+                              grid: { color: '#1f2937' }
+                            },
+                            y: {
+                              ticks: { color: '#9ca3af', font: { size: 10 } },
+                              grid: { display: false }
+                            }
                           }
-                        }
-                      }}
-                    />
-                  </div>
+                        }}
+                      />
+                    </div>
 
-                  {/* Panorama Federativo e Mapa de Calor do Brasil (Heatmap) */}
-                  <PanoramaFederativoHeatmap data={dynamicData.panorama_uf || []} />
-
+                    {/* Panorama Federativo e Mapa de Calor do Brasil (Heatmap) */}
+                    <PanoramaFederativoHeatmap 
+                      data={(dynamicData.panorama_uf || []).filter(d => d.uf && d.uf.trim() !== '')} 
+                    />                  
+                  </React.Fragment>
+                  )}
                 </div>
               </div>
             )}
@@ -1038,8 +1284,8 @@
                       type="bar"
                       id="chart-pg-bidirecional"
                       data={{
-                        labels: (dynamicData.comparativo_bidirecional || []).map(d => {
-                          const ent = String(d?.entidade || 'Entidade');
+                        labels: (dynamicData.comparativo_bidirecional || []).slice(0,10).map(d => {
+                          const ent = String(d?.nome_doador || 'Entidade');
                           return ent.length > 20 ? ent.substring(0, 20) + '...' : ent;
                         }),
                         datasets: [
@@ -1138,7 +1384,37 @@
                           borderRadius: 4,
                         }]
                       }}
-                      options={{ indexAxis: 'y' }}
+                      options={{ 
+                        indexAxis: 'y',
+                        scales: {
+                          x: {
+                            type: 'logarithmic',
+                            title: { display: true, 
+                              text: 'Aporte Próprio (R$) - Escala Logarítmica', 
+                              color: '#9ca3af' 
+                            },
+                            ticks: {
+                              color: '#cbd5e1',
+                              // Formata os números no eixo para ficar legível
+                              callback: function(value) {
+                                  if (value === 10 || value === 100 || value === 1000 || value === 10000 || value === 100000 || value === 1000000) {
+                                      return 'R$ ' + value.toLocaleString('pt-BR');
+                                  }
+                                  return ''; 
+                              }
+                            },
+                            grid: { color: 'rgba:(255, 255, 255, 0.05)'}
+                          },
+
+                          y: {
+                            ticks: { color: '#cbd5e1' },
+                            grid: { display: false }
+                          }
+                        },
+                        plugins: {
+                          legend: {display: false}
+                        }
+                      }}
                     />
                   </div>
 
