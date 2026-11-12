@@ -168,6 +168,11 @@ def converter_dados_para_parquet(
     col_id_mun_doador = "NULLIF(NULLIF(TRIM(id_municipio_tse_doador), 'N/A'), '') AS id_municipio_tse_doador" if "id_municipio_tse_doador" in colunas_existentes else "NULL::VARCHAR AS id_municipio_tse_doador"
     col_uf_forn = "NULLIF(NULLIF(UPPER(TRIM(sigla_uf_fornecedor)), 'N/A'), '') AS sigla_uf_fornecedor" if "sigla_uf_fornecedor" in colunas_existentes else "NULL::VARCHAR AS sigla_uf_fornecedor"
     col_id_mun_forn = "NULLIF(NULLIF(TRIM(id_municipio_tse_fornecedor), 'N/A'), '') AS id_municipio_tse_fornecedor" if "id_municipio_tse_fornecedor" in colunas_existentes else "NULL::VARCHAR AS id_municipio_tse_fornecedor"
+    col_uf_empresa = "NULLIF(NULLIF(UPPER(TRIM(uf_empresa)), 'N/A'), '') AS uf_empresa" if "uf_empresa" in colunas_existentes else "NULL::VARCHAR AS uf_empresa"
+    col_razao = "NULLIF(NULLIF(TRIM(razao_social), 'N/A'), '') AS razao_social" if "razao_social" in colunas_existentes else "NULL::VARCHAR AS razao_social"
+    col_setor = "NULLIF(NULLIF(TRIM(setor_economico), 'N/A'), '') AS setor_economico" if "setor_economico" in colunas_existentes else "NULL::VARCHAR AS setor_economico"
+    col_is_emp = "TRY_CAST(is_empresario AS BOOLEAN) AS is_empresario" if "is_empresario" in colunas_existentes else "CASE WHEN cnpj_basico IS NOT NULL THEN TRUE ELSE FALSE END AS is_empresario"
+    col_is_eleito = "TRY_CAST(is_eleito AS BOOLEAN) AS is_eleito" if "is_eleito" in colunas_existentes else "CASE WHEN LOWER(TRIM(situacao)) = 'eleito' THEN TRUE ELSE FALSE END AS is_eleito"
     col_auto = (
         "CASE WHEN TRIM(cpf_candidato) = TRIM(cpf_cnpj_doador) OR TRIM(autofinanciamento) = '1' THEN 1::TINYINT ELSE 0::TINYINT END AS autofinanciamento"
         if "autofinanciamento" in colunas_existentes
@@ -197,6 +202,11 @@ def converter_dados_para_parquet(
                 COALESCE(TRY_CAST(REPLACE(REPLACE(TRIM(valor_receita), '.', ''), ',', '.') AS DOUBLE), 0.0) AS valor_receita,
                 {col_cnpj},
                 {col_auto},
+                {col_uf_empresa},
+                {col_razao},
+                {col_setor},
+                {col_is_emp},
+                {col_is_eleito},
                 CASE
                     WHEN UPPER(nome_doador) LIKE '%DIREÇÃO%' 
                       OR UPPER(nome_doador) LIKE '%DIRECAO%' 

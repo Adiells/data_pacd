@@ -42,6 +42,8 @@
       background-color: #0b0f19;
       color: #f3f4f6;
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
     .chart-container {
       position: relative;
@@ -91,12 +93,32 @@
       return "R$ " + Number(val).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function formatMoedaCompacta(val) {
+      if (val === undefined || val === null || isNaN(val)) return "R$ 0,00";
+      const num = Number(val);
+      if (num >= 1e9) {
+        return "R$ " + (num / 1e9).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " Bi";
+      }
+      if (num >= 1e6) {
+        return "R$ " + (num / 1e6).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " Mi";
+      }
+      if (num >= 1e3) {
+        return "R$ " + (num / 1e3).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " mil";
+      }
+      return "R$ " + num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
     function formatNumero(val) {
       if (val === undefined || val === null || isNaN(val)) return "0";
       return Number(val).toLocaleString("pt-BR");
     }
 
-    function ChartCanvas({ type, data, options, id }) {
+    function truncateText(str, maxLen = 22) {
+      if (!str) return "";
+      return str.length > maxLen ? str.substring(0, maxLen) + "..." : str;
+    }
+
+    function ChartCanvas({ type, data, options, id, height }) {
       const canvasRef = useRef(null);
       const chartInstanceRef = useRef(null);
 
@@ -153,7 +175,7 @@
       }, [data, options, type]);
 
       return (
-        <div className="chart-container">
+        <div className="chart-container" style={height ? { height: `${height}px` } : undefined}>
           <canvas ref={canvasRef} id={id}></canvas>
         </div>
       );
@@ -255,37 +277,61 @@
       const activePct = sumVal > 0 ? ((activeTotal / sumVal) * 100).toFixed(1) : "0.0";
 
       return (
-        <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg lg:col-span-2 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-800 gap-2">
-            <h3 className="text-sm font-semibold text-gray-300 tracking-wide">
-              Panorama Federativo e Mapa de Calor do Brasil (Heatmap)
-            </h3>
-            <div className="flex items-center space-x-2 text-xs">
-              <span className="text-gray-400 font-medium">{formatMoeda(minVal)}</span>
+        <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-xl lg:col-span-2 space-y-4 shadow-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-800 gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                Panorama Federativo e Mapa de Calor do Brasil
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Concentração territorial do financiamento eleitoral por Unidade da Federação.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 bg-[#111827]/80 px-3 py-1.5 rounded-lg border border-gray-700/60 shrink-0">
+              <span className="text-xs text-gray-400 font-medium font-mono">{formatMoedaCompacta(minVal)}</span>
               <div className="w-24 sm:w-36 h-2.5 rounded-full bg-gradient-to-r from-[#fef08a] via-[#fb923c] via-[#ef4444] to-[#991b1b] border border-gray-700"></div>
-              <span className="text-gray-400 font-medium">{formatMoeda(maxVal)}</span>
+              <span className="text-xs text-gray-200 font-bold font-mono">{formatMoedaCompacta(maxVal)}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
             {/* Mapa de Calor Cartográfico (Grid 8x8) */}
-            <div className="lg:col-span-5 flex flex-col items-center justify-center p-2 bg-[#111827]/40 rounded-lg border border-gray-800/60">
-              <div className="h-6 mb-2 flex items-center justify-center text-xs font-semibold">
+            <div className="lg:col-span-5 flex flex-col items-center justify-center p-4 bg-[#111827]/50 rounded-xl border border-gray-800/80">
+              <div className="w-full bg-[#1f2937]/80 border border-gray-700/60 rounded-lg px-3.5 py-2 mb-3 flex items-center justify-between gap-2 min-h-[38px]">
                 {activeUf ? (
-                  <span className="text-blue-300">
-                    {activeUf} - {NOMES_UFS[activeUf] || activeUf}: {formatMoeda(activeTotal)} ({activePct}%)
-                  </span>
-                ) : null}
+                  <>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="bg-blue-600 text-white font-mono text-xs font-bold px-2 py-0.5 rounded shadow-sm shrink-0">
+                        {activeUf}
+                      </span>
+                      <span className="text-sm font-bold text-gray-100 truncate">
+                        {NOMES_UFS[activeUf] || activeUf}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-mono font-bold text-emerald-400 block leading-tight">
+                        {formatMoeda(activeTotal)}
+                      </span>
+                      <span className="text-xs font-mono text-amber-300 font-semibold">
+                        {activePct}% do recorte
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-400">Passe o mouse sobre um estado</span>
+                )}
               </div>
-              <div className="space-y-1">
+
+              <div className="space-y-1.5 my-1">
                 {BRAZIL_MAP_GRID.map((row, rIdx) => (
-                  <div key={rIdx} className="flex gap-1 justify-center">
+                  <div key={rIdx} className="flex gap-1.5 justify-center">
                     {row.map((ufCode, cIdx) => {
                       if (!ufCode) {
-                        return <div key={cIdx} className="w-7 h-7 sm:w-8 sm:h-8" />;
+                        return <div key={cIdx} className="w-8 h-8 sm:w-9 sm:h-9" />;
                       }
                       const val = ufsMap[ufCode] || 0;
-                      const bg = val > 0 ? getHeatColor(val, minVal, maxVal, 0.9) : '#1f2937';
+                      const bg = val > 0 ? getHeatColor(val, minVal, maxVal, 0.92) : '#1f2937';
                       const border = val > 0 ? getHeatColor(val, minVal, maxVal, 1) : '#374151';
                       const textColor = getHeatTextColor(val, minVal, maxVal);
                       const isHovered = hoveredUf === ufCode;
@@ -296,7 +342,7 @@
                           onMouseEnter={() => setHoveredUf(ufCode)}
                           onMouseLeave={() => setHoveredUf(null)}
                           style={{ backgroundColor: bg, borderColor: border, color: textColor }}
-                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded flex items-center justify-center font-bold text-[11px] cursor-pointer border transition-all duration-150 select-none shadow-sm ${
+                          className={`w-8 h-8 sm:w-9 sm:h-9 rounded-md flex items-center justify-center font-mono font-bold text-xs cursor-pointer border transition-all duration-150 select-none shadow-sm ${
                             isHovered ? 'scale-125 z-20 ring-2 ring-white shadow-lg' : 'hover:scale-110 z-10'
                           }`}
                         >
@@ -314,12 +360,13 @@
               <ChartCanvas
                 type="bar"
                 id="chart-vg-heatmap"
+                height={320}
                 data={{
                   labels: ufsData.map(d => d.uf),
                   datasets: [{
                     label: 'Volume Total (R$)',
                     data: ufsData.map(d => d.total),
-                    backgroundColor: ufsData.map(d => getHeatColor(d.total, minVal, maxVal, 0.85)),
+                    backgroundColor: ufsData.map(d => getHeatColor(d.total, minVal, maxVal, 0.88)),
                     borderColor: ufsData.map(d => getHeatColor(d.total, minVal, maxVal, 1)),
                     borderWidth: 1,
                     borderRadius: 4,
@@ -340,7 +387,7 @@
                   },
                   scales: {
                     x: {
-                      ticks: { color: '#9ca3af', font: { size: 10 } },
+                      ticks: { color: '#9ca3af', font: { size: 10, weight: 'bold' }, autoSkip: false },
                       grid: { display: false }
                     },
                     y: {
@@ -365,10 +412,19 @@
       );
     }
 
-  const DropdownEstados = ({ uf, setUf, disabled, ufsValidas }) => {
+  const REGIOES = {
+    'Norte': ['AC', 'AM', 'AP', 'PA', 'RO', 'RR', 'TO'],
+    'Nordeste': ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'],
+    'Centro-Oeste': ['DF', 'GO', 'MS', 'MT'],
+    'Sudeste': ['ES', 'MG', 'RJ', 'SP'],
+    'Sul': ['PR', 'RS', 'SC'],
+  };
+
+  const DropdownEstados = ({ uf, setUf, disabled, ufsValidas, isMunicipal }) => {
       const [aberto, setAberto] = React.useState(false);
 
       const toggleUf = (estado) => {
+        if (isMunicipal && estado === "DF") return;
         if (estado === "TODAS") {
           setUf(["TODAS"]);
           setAberto(false);
@@ -384,6 +440,14 @@
           novaLista.push(estado);
         }
         setUf(novaLista);
+      };
+
+      const selecionarRegiao = (nomeRegiao) => {
+        let ufsRegiao = (REGIOES[nomeRegiao] || []).filter(e => ufsValidas.includes(e));
+        if (isMunicipal) {
+          ufsRegiao = ufsRegiao.filter(e => e !== "DF");
+        }
+        setUf(ufsRegiao.length > 0 ? ufsRegiao : ["TODAS"]);
       };
 
       return (
@@ -403,26 +467,163 @@
             <div className="absolute z-50 w-full mt-2 bg-[#1e293b] border border-blue-500/30 rounded-lg shadow-2xl p-3">
               <div 
                 onClick={() => toggleUf("TODAS")}
-                className={`px-3 py-2 rounded-md cursor-pointer text-sm text-center mb-3 transition-colors ${uf.includes("TODAS") ? 'bg-blue-600 text-white font-bold' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                className={`px-3 py-1.5 rounded-md cursor-pointer text-xs font-bold text-center mb-2.5 transition-colors ${uf.includes("TODAS") ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
               >
-                Selecionar Todas as UFs
+                Todas as UFs do Brasil
               </div>
-              <div className="grid grid-cols-4 gap-2 border-t border-slate-600 pt-3">
-                {ufsValidas.map(estado => (
-                  <div 
-                    key={estado}
-                    onClick={() => toggleUf(estado)}
-                    className={`px-1 py-1.5 rounded cursor-pointer text-center text-xs font-semibold transition-transform active:scale-95 ${uf.includes(estado) ? 'bg-emerald-500 text-white shadow-md' : 'bg-[#0f172a] text-slate-400 border border-slate-700 hover:bg-slate-600 hover:text-white'}`}
-                  >
-                    {estado}
-                  </div>
-                ))}
+
+              {/* Botões de Seleção Rápida por Região */}
+              <div className="mb-2.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Regiões:</span>
+                <div className="grid grid-cols-3 gap-1">
+                  {Object.keys(REGIOES).map(reg => (
+                    <button
+                      key={reg}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); selecionarRegiao(reg); }}
+                      className="px-1.5 py-1 text-[10px] font-semibold rounded bg-slate-800 text-slate-300 hover:bg-blue-600 hover:text-white transition-colors border border-slate-700 truncate"
+                      title={`Selecionar estados do ${reg}`}
+                    >
+                      {reg}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1.5 border-t border-slate-600 pt-2.5">
+                {ufsValidas.map(estado => {
+                  const isDfBloqueado = isMunicipal && estado === "DF";
+                  return (
+                    <div 
+                      key={estado}
+                      onClick={() => !isDfBloqueado && toggleUf(estado)}
+                      title={isDfBloqueado ? "DF não possui eleições municipais (Art. 32 CF/88)" : estado}
+                      className={`px-1 py-1.5 rounded text-center text-xs font-semibold transition-transform ${
+                        isDfBloqueado
+                          ? 'opacity-30 cursor-not-allowed bg-[#0f172a] text-slate-600 border border-slate-800'
+                          : uf.includes(estado)
+                            ? 'bg-emerald-500 text-white shadow-md cursor-pointer active:scale-95'
+                            : 'bg-[#0f172a] text-slate-400 border border-slate-700 hover:bg-slate-600 hover:text-white cursor-pointer active:scale-95'
+                      }`}
+                    >
+                      {estado}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
       );
     };
+
+  const DropdownPartidos = ({ partido, setPartido, partidosValidos }) => {
+    const [aberto, setAberto] = React.useState(false);
+    const [busca, setBusca] = React.useState("");
+
+    const togglePartido = (p) => {
+      if (p === "TODOS") {
+        setPartido(["TODOS"]);
+        setAberto(false);
+        return;
+      }
+      let novaLista = Array.isArray(partido) ? partido.filter(x => x !== "TODOS") : [];
+      if (novaLista.includes(p)) {
+        novaLista = novaLista.filter(x => x !== p);
+        if (novaLista.length === 0) novaLista = ["TODOS"];
+      } else {
+        novaLista.push(p);
+      }
+      setPartido(novaLista);
+    };
+
+    const partidosFiltrados = (partidosValidos || []).filter(p => 
+      p.toUpperCase().includes(busca.toUpperCase().trim())
+    );
+
+    let labelExibicao = "Todos os Partidos";
+    if (Array.isArray(partido) && !partido.includes("TODOS")) {
+      if (partido.length <= 3) {
+        labelExibicao = partido.join(", ");
+      } else {
+        labelExibicao = `${partido.length} partidos selecionados`;
+      }
+    } else if (typeof partido === "string" && partido !== "TODOS") {
+      labelExibicao = partido;
+    }
+
+    return (
+      <div className="relative">
+        <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">
+          Legenda Partidária
+        </label>
+        <div 
+          onClick={() => setAberto(!aberto)}
+          className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white flex justify-between items-center cursor-pointer transition-colors hover:border-blue-400"
+        >
+          <span className="truncate">{labelExibicao}</span>
+          <span className="text-blue-400 text-xs">{aberto ? '▲' : '▼'}</span>
+        </div>
+        
+        {aberto && (
+          <div className="absolute z-50 w-80 sm:w-[350px] mt-2 bg-[#1e293b] border border-blue-500/30 rounded-lg shadow-2xl p-3">
+            <div 
+              onClick={() => togglePartido("TODOS")}
+              className={`px-3 py-1.5 rounded-md cursor-pointer text-xs font-bold text-center mb-2.5 transition-colors ${
+                (Array.isArray(partido) && partido.includes("TODOS")) || partido === "TODOS"
+                  ? 'bg-blue-600 text-white shadow-md' 
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              Todos os Partidos
+            </div>
+
+            {/* Busca Rápida */}
+            <div className="mb-2">
+              <input
+                type="text"
+                placeholder="Buscar sigla (ex: PT, PL, PSD)..."
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full bg-[#0f172a] border border-gray-700 rounded px-2.5 py-1 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-400"
+              />
+            </div>
+
+            <div className="max-h-52 overflow-y-auto grid grid-cols-3 gap-1.5 border-t border-slate-600 pt-2 pr-1">
+              {partidosFiltrados.map(p => {
+                const isSelected = Array.isArray(partido) ? partido.includes(p) : partido === p;
+                const fontClass = p.length >= 12 
+                  ? 'text-[9.5px] tracking-tighter px-0.5' 
+                  : p.length >= 8 
+                    ? 'text-[10.5px] tracking-tight px-1' 
+                    : 'text-xs px-1';
+                return (
+                  <div 
+                    key={p}
+                    onClick={() => togglePartido(p)}
+                    title={p}
+                    className={`py-1.5 rounded cursor-pointer text-center font-bold transition-transform active:scale-95 whitespace-nowrap overflow-hidden text-ellipsis flex items-center justify-center min-h-[30px] ${fontClass} ${
+                      isSelected 
+                        ? 'bg-emerald-500 text-white shadow-md' 
+                        : 'bg-[#0f172a] text-slate-400 border border-slate-700 hover:bg-slate-600 hover:text-white'
+                    }`}
+                  >
+                    {p}
+                  </div>
+                );
+              })}
+              {partidosFiltrados.length === 0 && (
+                <div className="col-span-3 text-center text-xs text-gray-500 py-3">
+                  Nenhum partido encontrado.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
   
   const TabelaTopDoadoresExpandivel = ({ doadores }) => {
     const [doadorExpandido, setDoadorExpandido] = useState(null);
@@ -431,8 +632,8 @@
       return <div className="text-gray-400 text-sm py-4 text-center">Nenhum dado encontrado.</div>;
     }
 
-    const toggleExpand = (nomeDoador) => {
-      setDoadorExpandido(doadorExpandido === nomeDoador ? null : nomeDoador);
+    const toggleExpand = (idx) => {
+      setDoadorExpandido(doadorExpandido === idx ? null : idx);
     };
 
     return (
@@ -447,22 +648,29 @@
           </thead>
           <tbody className="divide-y divide-gray-700/50">
             {doadores.map((doador, idx) => {
-              const isExpanded = doadorExpandido === doador.nome;
+              const isExpanded = doadorExpandido === idx;
               return (
                 <React.Fragment key={idx}>
                   {/* Linha Principal do Doador */}
                   <tr 
-                    onClick={() => toggleExpand(doador.nome)}
+                    onClick={() => toggleExpand(idx)}
                     className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : 'bg-transparent'}`}
                   >
-                    <td className="px-4 py-3 font-semibold truncate max-w-[200px]" title={doador.nome}>
-                      <span className="text-gray-400 mr-2 text-xs">{idx + 1}º</span>
-                      {doador.nome}
+                    <td className="px-4 py-3 font-semibold max-w-[280px]">
+                      <div className="flex items-center justify-between gap-2 min-w-0" title={doador.nome}>
+                        <div className="flex items-center min-w-0 truncate">
+                          <span className="text-gray-400 mr-2 text-xs shrink-0">{idx + 1}º</span>
+                          <span className="truncate text-sm text-gray-200">{doador.nome}</span>
+                        </div>
+                        <span className="shrink-0 bg-blue-950 text-blue-300 font-mono text-xs font-bold px-1.5 py-0.5 rounded border border-blue-800/60" title={`UF do Doador: ${doador.uf && doador.uf !== '-' ? doador.uf : 'Não informada no TSE'}`}>
+                          {doador.uf && doador.uf !== '-' ? doador.uf : 'N/I'}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-right font-bold text-blue-400">
+                    <td className="px-4 py-3 text-right font-bold text-sm font-mono text-blue-400 whitespace-nowrap">
                       {formatMoeda(doador.total)}
                     </td>
-                    <td className="px-4 py-3 text-center text-gray-500">
+                    <td className="px-4 py-3 text-center text-gray-500 text-xs">
                       {isExpanded ? '▼' : '▶'}
                     </td>
                   </tr>
@@ -471,39 +679,726 @@
                   {isExpanded && doador.destinatarios && (
                     <tr className="bg-[#0f172a]/80 border-l-2 border-l-blue-500">
                       <td colSpan="3" className="p-0">
-                        <div className="px-6 py-4 max-h-[300px] overflow-y-auto">
-                          <div className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">
+                        <div className="px-6 py-4 max-h-[320px] overflow-y-auto">
+                          <div className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2.5">
                             Fluxo de Financiamento ({doador.destinatarios.length} candidaturas)
                           </div>
                           <table className="w-full text-xs text-gray-300">
                             <thead className="text-gray-500 border-b border-gray-700/50">
                               <tr>
                                 <th className="py-2 text-left font-medium">Candidato Beneficiado</th>
-                                <th className="py-2 text-left font-medium w-24">Partido</th>
-                                <th className="py-2 text-left font-medium w-32">Cargo</th>
+                                <th className="py-2 text-center font-medium w-16">UF</th>
+                                <th className="py-2 text-left font-medium w-28">Partido</th>
+                                <th className="py-2 text-left font-medium w-36">Cargo</th>
                                 <th className="py-2 text-right font-medium w-32">Valor Recebido</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-800/50">
                               {doador.destinatarios.slice(0, 50).map((dest, i) => (
                                 <tr key={i} className="hover:bg-gray-800/40 transition-colors">
-                                  <td className="py-2 truncate max-w-[150px]" title={dest.candidato}>{dest.candidato}</td>
-                                  <td className="py-2">
+                                  <td className="py-2.5 truncate max-w-[180px] font-medium text-slate-200" title={dest.candidato}>{dest.candidato}</td>
+                                  <td className="py-2.5 text-center">
+                                    <span className="bg-slate-800 text-blue-300 font-mono font-bold px-1.5 py-0.5 rounded border border-slate-700 text-[10px]">
+                                      {dest.uf || 'BR'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5">
                                     <span className="bg-gray-800 px-2 py-0.5 rounded border border-gray-700 text-[10px]">
                                       {dest.partido}
                                     </span>
                                   </td>
-                                  <td className="py-2 text-gray-400">{dest.cargo}</td>
-                                  <td className="py-2 text-right text-emerald-400 font-semibold">{formatMoeda(dest.valor)}</td>
+                                  <td className="py-2.5 text-gray-400">{dest.cargo}</td>
+                                  <td className="py-2.5 text-right text-emerald-400 font-semibold font-mono">{formatMoeda(dest.valor)}</td>
                                 </tr>
                               ))}
                               {doador.destinatarios.length > 50 && (
                                 <tr className="bg-[#0f172a]/40">
-                                  <td colSpan="4" className="py-3 text-center text-xs text-gray-500 font-medium italic border-t border-gray-800/50">
+                                  <td colSpan="5" className="py-3 text-center text-xs text-gray-500 font-medium italic border-t border-gray-800/50">
                                     ... e mais {formatNumero(doador.destinatarios.length - 50)} destinatários menores ocultados.
                                   </td>
                                 </tr>
                               )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const TabelaTopSetoresExpandivel = ({ setores }) => {
+    const [setorExpandido, setSetorExpandido] = useState(null);
+
+    if (!setores || setores.length === 0) return <div className="text-gray-400 text-sm py-4 text-center">Nenhum setor identificado.</div>;
+
+    const toggleExpand = (idx) => setSetorExpandido(setorExpandido === idx ? null : idx);
+
+    return (
+      <div className="w-full overflow-x-auto rounded-lg border border-gray-700/60 bg-[#111827]">
+        <table className="w-full text-left text-sm text-gray-300 table-fixed min-w-[900px]">
+          <thead className="bg-[#1f2937]/80 text-xs uppercase tracking-wider text-emerald-300 border-b border-gray-700">
+            <tr>
+              <th scope="col" className="px-4 py-3.5 w-[26%]">Setor Econômico (CNAE / IBGE)</th>
+              <th scope="col" className="px-4 py-3.5 w-[22%]">Principal Empresa do Setor</th>
+              <th scope="col" className="px-4 py-3.5 w-[18%]">Principal Sócio Doador</th>
+              <th scope="col" className="px-4 py-3.5 w-[18%]">Principal Campanha Apoiada</th>
+              <th scope="col" className="px-4 py-3.5 text-right w-[12%] whitespace-nowrap">Volume Aportado</th>
+              <th scope="col" className="px-3 py-3.5 text-center w-[4%]"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/60">
+            {setores.map((s, idx) => {
+              const isExpanded = setorExpandido === idx;
+              return (
+                <React.Fragment key={idx}>
+                  <tr 
+                    onClick={() => toggleExpand(idx)}
+                    className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : 'bg-transparent'}`}
+                  >
+                    <td className="px-4 py-3 font-semibold text-gray-200">
+                      <div className="flex items-center gap-1.5 min-w-0" title={s.setor}>
+                        <span className="text-gray-400 text-xs shrink-0 font-mono">{idx + 1}º</span>
+                        <span className="truncate text-sm text-gray-100">{s.setor}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 ml-4">
+                        <span className="bg-emerald-950 text-emerald-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-emerald-800/60" title={`${s.doadores} sócios doadores únicos no setor`}>
+                          {formatNumero(s.doadores)} sócios
+                        </span>
+                        {s.empresas_unicas > 0 && (
+                          <span className="bg-slate-800 text-blue-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-slate-700" title={`${s.empresas_unicas} empresas ativas no setor`}>
+                            {formatNumero(s.empresas_unicas)} emp.
+                          </span>
+                        )}
+                        {s.transacoes > 0 && (
+                          <span className="text-xs text-gray-400">
+                            • {formatNumero(s.transacoes)} aportes
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 min-w-0" title={s.principal_empresa || '-'}>
+                        <span className="text-sm text-gray-200 font-medium truncate">{s.principal_empresa || '-'}</span>
+                        {s.uf_principal_empresa && s.uf_principal_empresa !== '-' && (
+                          <span className="shrink-0 bg-blue-950 text-blue-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-800/60" title={`UF da Sede: ${s.uf_principal_empresa}`}>
+                            {s.uf_principal_empresa}
+                          </span>
+                        )}
+                      </div>
+                      {s.volume_para_eleitos > 0 && (
+                        <div className="text-xs text-purple-400 font-mono mt-0.5" title={`Volume do setor destinado a candidatos eleitos: ${formatMoeda(s.volume_para_eleitos)}`}>
+                          Eleitos: {formatMoedaCompacta(s.volume_para_eleitos)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm text-amber-200/90 font-medium truncate" title={s.principal_socio || '-'}>
+                        {s.principal_socio || '-'}
+                      </div>
+                      <div className="text-xs text-gray-400 truncate mt-0.5">
+                        Maior doador PF do ramo
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.principal_candidato && s.principal_candidato !== 'NÃO INFORMADO' ? (
+                        <div>
+                          <div className="font-semibold text-emerald-400 truncate flex items-center gap-1.5 text-sm" title={`Candidato Destaque: ${s.principal_candidato}`}>
+                            <span className="truncate">{s.principal_candidato}</span>
+                            {s.uf_campanha_destaque && s.uf_campanha_destaque !== '-' && (
+                              <span className="shrink-0 bg-emerald-950 text-emerald-300 font-mono text-[10px] font-bold px-1 py-0.5 rounded border border-emerald-800/60">
+                                {s.uf_campanha_destaque}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 truncate mt-0.5">
+                            {s.partido_destaque} • {s.cargo_destaque}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-500 italic text-xs">Não identificado</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-base text-emerald-400 whitespace-nowrap font-mono" title={`Total Aportado no Setor: ${formatMoeda(s.total)}`}>
+                      {formatMoeda(s.total)}
+                    </td>
+                    <td className="px-3 py-3 text-center text-gray-500 text-xs">
+                      {isExpanded ? '▼' : '▶'}
+                    </td>
+                  </tr>
+
+                  {isExpanded && s.detalhes && (
+                    <tr className="bg-[#0f172a]/90 border-l-2 border-l-emerald-500">
+                      <td colSpan="6" className="p-0">
+                        <div className="px-6 py-4 max-h-[360px] overflow-y-auto">
+                          <div className="text-xs font-bold uppercase tracking-wider text-emerald-300 mb-3 flex items-center justify-between">
+                            <span>Empresas, Sócios Doadores e Candidatos do Setor ({s.detalhes.length} maiores relações consolidadas)</span>
+                            <span className="text-xs font-mono text-gray-400 normal-case">Agrupado por Doador ➔ Candidato</span>
+                          </div>
+                          <table className="w-full text-xs text-gray-300 table-fixed">
+                            <thead className="text-gray-400 border-b border-gray-700/60 uppercase">
+                              <tr>
+                                <th className="py-2.5 text-left font-medium w-[28%]">Razão Social / Empresa</th>
+                                <th className="py-2.5 text-left font-medium w-[24%]">Sócio Doador</th>
+                                <th className="py-2.5 text-left font-medium w-[26%]">Candidato Apoiado</th>
+                                <th className="py-2.5 text-center font-medium w-[8%]">Transações</th>
+                                <th className="py-2.5 text-right font-medium w-[14%]">Montante Acumulado</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800/50">
+                              {s.detalhes.map((d, i) => (
+                                <tr key={i} className="hover:bg-gray-800/40 transition-colors">
+                                  <td className="py-2.5 pr-2 text-slate-200 font-medium truncate" title={d.empresa}>
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span className="truncate">{d.empresa}</span>
+                                      {d.uf_empresa && d.uf_empresa !== '-' && (
+                                        <span className="shrink-0 bg-blue-950 text-blue-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-800/60" title={`UF da Empresa: ${d.uf_empresa}`}>
+                                          {d.uf_empresa}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 pr-2 text-amber-200/90 font-medium truncate" title={d.socio || '-'}>
+                                    {d.socio || '-'}
+                                  </td>
+                                  <td className="py-2.5 pr-2 truncate">
+                                    <div className="font-semibold text-emerald-300 truncate flex items-center gap-1.5" title={d.candidato}>
+                                      <span className="truncate">{d.candidato}</span>
+                                      {d.uf && d.uf !== '-' && (
+                                        <span className="shrink-0 bg-emerald-950 text-emerald-300 font-mono text-[10px] font-bold px-1 py-0.5 rounded border border-emerald-800/60">
+                                          {d.uf}
+                                        </span>
+                                      )}
+                                      {d.is_eleito && (
+                                        <span className="shrink-0 bg-purple-950 text-purple-300 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border border-purple-800/60">
+                                          ELEITO
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] text-gray-400 truncate mt-0.5">{d.partido} • {d.cargo}</div>
+                                  </td>
+                                  <td className="py-2.5 text-center font-mono text-gray-300">
+                                    <span className="bg-gray-800 px-2 py-0.5 rounded border border-gray-700 text-xs">
+                                      {formatNumero(d.qtd_aportes || 1)}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 text-right text-emerald-400 font-bold whitespace-nowrap font-mono text-sm">{formatMoeda(d.total_doado)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+
+  const TabelaTopGruposEmpresariais = ({ empresas }) => {
+    const [grupoExpandido, setGrupoExpandido] = useState(null);
+
+    if (!empresas || empresas.length === 0) {
+      return <div className="text-gray-400 text-sm py-4 text-center">Nenhum grupo empresarial mapeado no recorte.</div>;
+    }
+
+    const toggleExpand = (idx) => setGrupoExpandido(prev => prev === idx ? null : idx);
+
+    return (
+      <div className="w-full overflow-x-auto rounded-lg border border-gray-700/60 bg-[#111827]">
+        <table className="w-full text-left text-sm text-gray-300 table-fixed min-w-[900px]">
+          <thead className="bg-[#1f2937]/80 uppercase tracking-wider text-xs text-blue-300 border-b border-gray-700">
+            <tr>
+              <th className="px-4 py-3.5 w-[27%]">Razão Social / Grupo Empresarial</th>
+              <th className="px-4 py-3.5 w-[21%]">Principal Sócio Doador</th>
+              <th className="px-4 py-3.5 w-[21%]">Principal Campanha Apoiada</th>
+              <th className="px-3 py-3.5 text-center w-[13%]">Alcance Político</th>
+              <th className="px-4 py-3.5 text-right w-[14%]">Aporte Total</th>
+              <th className="px-3 py-3.5 text-center w-[4%]"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/60">
+            {empresas.map((e, idx) => {
+              const isExpanded = grupoExpandido === idx;
+              return (
+                <React.Fragment key={idx}>
+                  <tr 
+                    onClick={() => toggleExpand(idx)}
+                    className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : 'bg-transparent'}`}
+                  >
+                    <td className="px-4 py-3 font-semibold text-gray-200">
+                      <div className="flex items-center gap-1.5 min-w-0" title={e.empresa}>
+                        <span className="text-gray-400 text-xs shrink-0 font-mono">{idx + 1}º</span>
+                        <span className="truncate text-sm text-gray-100">{e.empresa}</span>
+                        {e.uf_empresa && e.uf_empresa !== '-' && (
+                          <span className="shrink-0 bg-blue-950 text-blue-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-800/60" title={`UF da Sede da Empresa: ${e.uf_empresa}`}>
+                            {e.uf_empresa}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 ml-4">
+                        <span className="shrink-0 bg-slate-800 text-blue-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-slate-700" title={`${e.socios_doadores} CPFs de sócios doadores únicos neste grupo`}>
+                          {e.socios_doadores} {e.socios_doadores === 1 ? 'sócio' : 'sócios'}
+                        </span>
+                        {e.cnpj_basico && e.cnpj_basico !== '-' && (
+                          <span className="shrink-0 text-xs font-mono text-gray-400">
+                            CNPJ {e.cnpj_basico}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400 truncate" title={e.setor}>
+                          • {e.setor}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm text-gray-200 font-medium truncate" title={e.principal_socio}>
+                        {e.principal_socio || '-'}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {e.volume_para_eleitos > 0 ? (
+                          <span className="text-xs text-purple-400 font-mono" title={`Volume destinado a eleitos: ${formatMoeda(e.volume_para_eleitos)}`}>
+                            Eleitos: {formatMoedaCompacta(e.volume_para_eleitos)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-500 font-mono">Eleitos: R$ 0,00</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {e.principal_candidato && e.principal_candidato !== 'NÃO INFORMADO' ? (
+                        <div>
+                          <div className="font-semibold text-emerald-400 truncate flex items-center gap-1.5 text-sm" title={`Candidato Destaque: ${e.principal_candidato}`}>
+                            <span className="truncate">{e.principal_candidato}</span>
+                            {e.uf_campanha_destaque && e.uf_campanha_destaque !== '-' && (
+                              <span className="shrink-0 bg-emerald-950 text-emerald-300 font-mono text-[10px] font-bold px-1 py-0.5 rounded border border-emerald-800/60">
+                                {e.uf_campanha_destaque}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 truncate mt-0.5">
+                            {e.partido_destaque} • {e.cargo_destaque}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-500 italic text-xs">Não identificado</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-center font-mono">
+                      <div className="inline-flex items-center gap-1 bg-gray-800 px-2.5 py-0.5 rounded border border-gray-700 text-xs text-gray-200 font-semibold">
+                        <span>{formatNumero(e.candidatos_apoiados || 1)} camp.</span>
+                        {e.partidos_apoiados > 0 && (
+                          <span className="text-blue-300">• {e.partidos_apoiados} part.</span>
+                        )}
+                      </div>
+                      {e.transacoes > 0 && (
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {formatNumero(e.transacoes)} transações
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-base text-emerald-400 font-mono whitespace-nowrap">
+                      {formatMoeda(e.total)}
+                    </td>
+                    <td className="px-3 py-3 text-center text-gray-500 text-xs">
+                      {isExpanded ? '▼' : '▶'}
+                    </td>
+                  </tr>
+
+                  {isExpanded && e.detalhes && e.detalhes.length > 0 && (
+                    <tr className="bg-[#0f172a]/90 border-l-2 border-l-blue-500">
+                      <td colSpan="6" className="p-0">
+                        <div className="px-6 py-4 max-h-[360px] overflow-y-auto">
+                          <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-3 flex items-center justify-between">
+                            <span>Relações de Financiamento Consolidadas do Grupo ({e.detalhes.length} destinatários)</span>
+                            <span className="text-xs font-mono text-gray-400 normal-case">Agrupado por Sócio Doador ➔ Candidato</span>
+                          </div>
+                          <table className="w-full text-xs text-gray-300 table-fixed">
+                            <thead className="text-gray-400 border-b border-gray-700/60 uppercase">
+                              <tr>
+                                <th className="py-2.5 text-left font-medium w-[36%]">Sócio Doador</th>
+                                <th className="py-2.5 text-left font-medium w-[40%]">Candidato Destinatário</th>
+                                <th className="py-2.5 text-center font-medium w-[10%]">Transações</th>
+                                <th className="py-2.5 text-right font-medium w-[14%]">Montante Acumulado</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800/50">
+                              {e.detalhes.map((d, di) => (
+                                <tr key={di} className="hover:bg-gray-800/40 transition-colors">
+                                  <td className="py-2.5 pr-3 font-medium text-slate-200 truncate">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <span className="truncate">{d.socio}</span>
+                                      {d.uf_socio && d.uf_socio !== '-' && (
+                                        <span className="shrink-0 bg-blue-950 text-blue-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-800/60">
+                                          {d.uf_socio}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 pr-2 truncate">
+                                    <div className="font-semibold text-emerald-300 truncate flex items-center gap-1.5">
+                                      <span className="truncate">{d.candidato}</span>
+                                      {d.uf_candidato && d.uf_candidato !== '-' && (
+                                        <span className="shrink-0 bg-emerald-950 text-emerald-300 font-mono text-[10px] font-bold px-1 py-0.5 rounded border border-emerald-800/60">
+                                          {d.uf_candidato}
+                                        </span>
+                                      )}
+                                      {d.is_eleito && (
+                                        <span className="shrink-0 bg-purple-950 text-purple-300 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border border-purple-800/60">
+                                          ELEITO
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] text-gray-400 truncate mt-0.5">
+                                      {d.partido} • {d.cargo}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 text-center font-mono text-gray-300">
+                                    <span className="bg-gray-800 px-2 py-0.5 rounded border border-gray-700 text-xs">
+                                      {formatNumero(d.qtd_aportes || 1)}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 text-right text-emerald-400 font-bold whitespace-nowrap font-mono text-sm">
+                                    {formatMoeda(d.valor_receita)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const TabelaMaioresSociosElite = ({ socios }) => {
+    const [socioExpandido, setSocioExpandido] = useState(null);
+
+    if (!socios || socios.length === 0) {
+      return <div className="text-gray-400 text-sm py-4 text-center">Nenhum sócio ou líder empresarial mapeado no recorte.</div>;
+    }
+
+    const toggleExpand = (idx) => setSocioExpandido(prev => prev === idx ? null : idx);
+
+    return (
+      <div className="w-full overflow-x-auto rounded-lg border border-gray-700/60 bg-[#111827]">
+        <table className="w-full text-left text-sm text-gray-300 table-fixed min-w-[900px]">
+          <thead className="bg-[#1f2937]/80 uppercase tracking-wider text-xs text-amber-300 border-b border-gray-700">
+            <tr>
+              <th className="px-4 py-3.5 w-[23%]">Sócio Doador &amp; Origem</th>
+              <th className="px-4 py-3.5 w-[24%]">Empresa Vinculada &amp; Ramo</th>
+              <th className="px-4 py-3.5 w-[22%]">Principal Campanha Apoiada</th>
+              <th className="px-3 py-3.5 text-center w-[13%]">Alcance Político</th>
+              <th className="px-4 py-3.5 text-right w-[14%]">Volume Aportado</th>
+              <th className="px-3 py-3.5 text-center w-[4%]"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/60">
+            {socios.map((s, idx) => {
+              const isExpanded = socioExpandido === idx;
+              return (
+                <React.Fragment key={idx}>
+                  <tr 
+                    onClick={() => toggleExpand(idx)}
+                    className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : 'bg-transparent'}`}
+                  >
+                    <td className="px-4 py-3 font-semibold text-gray-200">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-gray-400 text-xs shrink-0 font-mono">{idx + 1}º</span>
+                        <span className="truncate text-sm text-gray-100" title={s.socio}>{s.socio}</span>
+                        {s.uf && s.uf !== '-' && (
+                          <span className="shrink-0 bg-blue-950 text-blue-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-800/60" title={`UF: ${s.uf}`}>
+                            {s.uf}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 ml-4">
+                        {s.qtd_empresas > 1 && (
+                          <span className="bg-amber-950/80 text-amber-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-800/60" title={`Sócio vinculado a ${s.qtd_empresas} empresas doadoras`}>
+                            {s.qtd_empresas} empresas
+                          </span>
+                        )}
+                        {s.volume_para_eleitos > 0 ? (
+                          <span className="text-xs text-purple-400 font-mono" title={`Volume destinado a eleitos: ${formatMoeda(s.volume_para_eleitos)}`}>
+                            Eleitos: {formatMoedaCompacta(s.volume_para_eleitos)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-500 font-mono">Eleitos: R$ 0,00</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 min-w-0" title={s.empresa}>
+                        <span className="text-sm text-gray-200 font-medium truncate">{s.empresa}</span>
+                        {s.uf_empresa && s.uf_empresa !== '-' && (
+                          <span className="shrink-0 bg-slate-800 text-blue-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-slate-700" title={`UF da Empresa: ${s.uf_empresa}`}>
+                            {s.uf_empresa}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 truncate mt-0.5" title={s.setor}>
+                        {s.setor}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.principal_candidato ? (
+                        <div>
+                          <div className="font-semibold text-emerald-400 truncate flex items-center gap-1.5 text-sm" title={`Candidato Destaque: ${s.principal_candidato}`}>
+                            <span className="truncate">{s.principal_candidato}</span>
+                            {s.uf_campanha_destaque && s.uf_campanha_destaque !== '-' && (
+                              <span className="shrink-0 bg-emerald-950 text-emerald-300 font-mono text-[10px] font-bold px-1 py-0.5 rounded border border-emerald-800/60">
+                                {s.uf_campanha_destaque}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 truncate mt-0.5">
+                            {s.partido_destaque} • {s.cargo_destaque}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-500 italic text-xs">Não identificado</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-center font-mono">
+                      <div className="inline-flex items-center gap-1 bg-gray-800 px-2.5 py-0.5 rounded border border-gray-700 text-xs text-gray-200 font-semibold">
+                        <span>{formatNumero(s.candidatos_apoiados)} camp.</span>
+                        {s.partidos_apoiados > 0 && (
+                          <span className="text-amber-300">• {s.partidos_apoiados} part.</span>
+                        )}
+                      </div>
+                      {s.transacoes > 0 && (
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {formatNumero(s.transacoes)} transações
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-base text-emerald-400 font-mono whitespace-nowrap">
+                      {formatMoeda(s.total)}
+                    </td>
+                    <td className="px-3 py-3 text-center text-gray-500 text-xs">
+                      {isExpanded ? '▼' : '▶'}
+                    </td>
+                  </tr>
+
+                  {isExpanded && s.detalhes && s.detalhes.length > 0 && (
+                    <tr className="bg-[#0f172a]/90 border-l-2 border-l-amber-500">
+                      <td colSpan="6" className="p-0">
+                        <div className="px-6 py-4 max-h-[360px] overflow-y-auto">
+                          <div className="text-xs font-bold uppercase tracking-wider text-amber-300 mb-3 flex items-center justify-between">
+                            <span>Campanhas Financiadas por {s.socio} ({s.detalhes.length} relações consolidadas)</span>
+                            <span className="text-xs font-mono text-gray-400 normal-case">Agrupado por Candidato Destinatário</span>
+                          </div>
+                          <table className="w-full text-xs text-gray-300 table-fixed">
+                            <thead className="text-gray-400 border-b border-gray-700/60 uppercase">
+                              <tr>
+                                <th className="py-2.5 text-left font-medium w-[40%]">Candidato Destinatário</th>
+                                <th className="py-2.5 text-left font-medium w-[36%]">Empresa do Grupo &amp; Setor</th>
+                                <th className="py-2.5 text-center font-medium w-[10%]">Transações</th>
+                                <th className="py-2.5 text-right font-medium w-[14%]">Montante Acumulado</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800/50">
+                              {s.detalhes.map((d, di) => (
+                                <tr key={di} className="hover:bg-gray-800/40 transition-colors">
+                                  <td className="py-2.5 pr-2 truncate">
+                                    <div className="font-semibold text-emerald-300 truncate flex items-center gap-1.5">
+                                      <span className="truncate">{d.candidato}</span>
+                                      {d.uf_candidato && d.uf_candidato !== '-' && (
+                                        <span className="shrink-0 bg-emerald-950 text-emerald-300 font-mono text-[10px] font-bold px-1 py-0.5 rounded border border-emerald-800/60">
+                                          {d.uf_candidato}
+                                        </span>
+                                      )}
+                                      {d.is_eleito && (
+                                        <span className="shrink-0 bg-purple-950 text-purple-300 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border border-purple-800/60">
+                                          ELEITO
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] text-gray-400 truncate mt-0.5">
+                                      {d.partido} • {d.cargo}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 pr-3 truncate">
+                                    <div className="text-slate-200 font-medium truncate text-xs" title={d.empresa}>{d.empresa}</div>
+                                    {d.setor && d.setor !== '-' && (
+                                      <div className="text-[11px] text-gray-400 truncate" title={d.setor}>{d.setor}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 text-center font-mono text-gray-300">
+                                    <span className="bg-gray-800 px-2 py-0.5 rounded border border-gray-700 text-xs">
+                                      {formatNumero(d.qtd_aportes || 1)}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 text-right text-emerald-400 font-bold whitespace-nowrap font-mono text-sm">
+                                    {formatMoeda(d.valor_receita)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const TabelaRotasInfluenciaExpandivel = ({ rotas }) => {
+    const [rotaExpandida, setRotaExpandida] = useState(null);
+
+    if (!rotas || rotas.length === 0) {
+      return (
+        <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-6 text-center">
+          <span className="text-amber-400 font-bold block mb-1">
+            ⚠️ Sem rotas interestaduais com domicílio formalmente registrado no recorte atual
+          </span>
+          <p className="text-xs text-gray-400 max-w-2xl mx-auto leading-relaxed">
+            Nenhuma transferência interestadual detectada com os filtros atuais.
+          </p>
+        </div>
+      );
+    }
+
+    const toggleExpand = (idx) => setRotaExpandida(prev => prev === idx ? null : idx);
+
+    return (
+      <div className="w-full overflow-x-auto rounded-lg border border-gray-700/60 bg-[#111827]">
+        <table className="w-full text-left text-sm text-gray-300 table-fixed min-w-[850px]">
+          <thead className="bg-[#1f2937]/80 uppercase tracking-wider text-xs text-emerald-300 border-b border-gray-700">
+            <tr>
+              <th className="px-4 py-3.5 w-[15%]">Origem ➔ Destino</th>
+              <th className="px-4 py-3.5 w-[25%]">Principal Doador na Rota</th>
+              <th className="px-4 py-3.5 w-[25%]">Principal Candidato Destinatário</th>
+              <th className="px-3 py-3.5 text-center w-[9%]">Transações</th>
+              <th className="px-3 py-3.5 text-right w-[12%]">Para Eleitos</th>
+              <th className="px-4 py-3.5 text-right w-[11%]">Volume da Rota</th>
+              <th className="px-3 py-3.5 text-center w-[4%]"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/60">
+            {rotas.map((r, idx) => {
+              const isExpanded = rotaExpandida === idx;
+              return (
+                <React.Fragment key={idx}>
+                  <tr 
+                    onClick={() => toggleExpand(idx)}
+                    className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : 'bg-transparent'}`}
+                  >
+                    <td className="px-4 py-3 font-bold text-gray-200">
+                      <div className="flex items-center gap-1.5 font-mono">
+                        <span className="bg-blue-950 text-blue-300 px-2 py-0.5 rounded border border-blue-800/60 text-xs">{r.uf_origem}</span>
+                        <span className="text-gray-500">➔</span>
+                        <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800/60 text-xs">{r.uf_destino}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm text-gray-200 font-semibold truncate" title={`Principal Doador: ${r.principal_doador}`}>
+                        {r.principal_doador || 'Não informado'}
+                      </div>
+                      {r.volume_empresarios > 0 && (
+                        <div className="text-xs text-amber-400 font-mono mt-0.5">
+                          Elite: {formatMoedaCompacta(r.volume_empresarios)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm font-semibold text-emerald-400 truncate" title={`Principal Destinatário: ${r.principal_candidato}`}>
+                        {r.principal_candidato || 'Não informado'}
+                      </div>
+                      <div className="text-xs text-gray-400 truncate mt-0.5">
+                        {r.principal_partido || '-'} • {r.principal_cargo || '-'}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-center font-mono text-gray-300">
+                      <span className="bg-gray-800 px-2 py-0.5 rounded border border-gray-700 text-xs font-medium">
+                        {formatNumero(r.transacoes)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono text-sm text-purple-400 font-semibold">
+                      {r.volume_para_eleitos > 0 ? formatMoeda(r.volume_para_eleitos) : <span className="text-gray-600 font-normal">R$ 0,00</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-sm font-bold text-emerald-400 whitespace-nowrap">
+                      {formatMoeda(r.volume)}
+                    </td>
+                    <td className="px-3 py-3 text-center text-gray-500 text-xs">
+                      {isExpanded ? '▼' : '▶'}
+                    </td>
+                  </tr>
+
+                  {isExpanded && r.detalhes && r.detalhes.length > 0 && (
+                    <tr className="bg-[#0f172a]/90 border-l-2 border-l-emerald-500">
+                      <td colSpan="7" className="p-0">
+                        <div className="px-6 py-4 max-h-[360px] overflow-y-auto">
+                          <div className="text-xs font-bold uppercase tracking-wider text-emerald-300 mb-3 flex items-center justify-between">
+                            <span>Principais Relações na Rota {r.uf_origem} ➔ {r.uf_destino} ({r.detalhes.length} maiores fluxos consolidados)</span>
+                            <span className="text-xs font-mono text-gray-400 normal-case">Agrupado por Doador ➔ Candidato</span>
+                          </div>
+                          <table className="w-full text-xs text-gray-300 table-fixed">
+                            <thead className="text-gray-400 border-b border-gray-700/60 uppercase">
+                              <tr>
+                                <th className="py-2.5 text-left font-medium w-[28%]">Doador / Entidade</th>
+                                <th className="py-2.5 text-left font-medium w-[24%]">Empresa Vinculada</th>
+                                <th className="py-2.5 text-left font-medium w-[26%]">Candidato Destinatário</th>
+                                <th className="py-2.5 text-center font-medium w-[8%]">Transações</th>
+                                <th className="py-2.5 text-right font-medium w-[14%]">Montante Acumulado</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800/50">
+                              {r.detalhes.map((d, di) => (
+                                <tr key={di} className="hover:bg-gray-800/40 transition-colors">
+                                  <td className="py-2.5 pr-3 font-medium text-slate-200 truncate" title={d.doador}>
+                                    {d.doador}
+                                  </td>
+                                  <td className="py-2.5 pr-3 text-gray-400 truncate text-xs" title={d.empresa}>
+                                    {d.empresa}
+                                  </td>
+                                  <td className="py-2.5 pr-2 truncate">
+                                    <div className="font-semibold text-emerald-300 truncate flex items-center gap-1.5">
+                                      <span className="truncate">{d.candidato}</span>
+                                      {d.is_eleito && (
+                                        <span className="shrink-0 bg-purple-950 text-purple-300 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border border-purple-800/60">
+                                          ELEITO
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] text-gray-400 truncate mt-0.5">
+                                      {d.partido} • {d.cargo}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 text-center font-mono text-gray-300">
+                                    <span className="bg-gray-800 px-2 py-0.5 rounded border border-gray-700 text-xs">
+                                      {formatNumero(d.qtd_aportes || 1)}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 text-right text-emerald-400 font-bold whitespace-nowrap font-mono text-sm">
+                                    {formatMoeda(d.valor_receita)}
+                                  </td>
+                                </tr>
+                              ))}
                             </tbody>
                           </table>
                         </div>
@@ -524,7 +1419,7 @@
 
     if (!candidatos || candidatos.length === 0) return <div className="text-gray-400 text-sm py-4 text-center">Nenhum dado encontrado.</div>;
 
-    const toggleExpand = (nome) => setCandExpandido(candExpandido === nome ? null : nome);
+    const toggleExpand = (idx) => setCandExpandido(candExpandido === idx ? null : idx);
 
     return (
       <div className="w-full overflow-hidden rounded-lg border border-gray-700/60 bg-[#111827]">
@@ -538,34 +1433,39 @@
           </thead>
           <tbody className="divide-y divide-gray-700/50">
             {candidatos.map((cand, idx) => {
-              const isExpanded = candExpandido === cand.nome;
+              const isExpanded = candExpandido === idx;
               return (
                 <React.Fragment key={idx}>
-                  {/* Linha Principal - Apenas Nome para evitar texto cortado */}
-                  <tr onClick={() => toggleExpand(cand.nome)} className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : ''}`}>
-                    <td className="px-4 py-3 font-semibold truncate max-w-[280px]" title={cand.nome}>
-                      <span className="text-gray-400 mr-2 text-xs">{idx + 1}º</span>
-                      {cand.nome}
+                  <tr onClick={() => toggleExpand(idx)} className={`cursor-pointer transition-colors hover:bg-gray-800/60 ${isExpanded ? 'bg-gray-800/40' : ''}`}>
+                    <td className="px-4 py-3 font-semibold max-w-[280px]">
+                      <div className="flex items-center justify-between gap-2 min-w-0" title={cand.nome}>
+                        <div className="flex items-center min-w-0 truncate">
+                          <span className="text-gray-400 mr-2 text-xs shrink-0">{idx + 1}º</span>
+                          <span className="truncate text-sm text-gray-200">{cand.nome}</span>
+                        </div>
+                        <span className="shrink-0 bg-emerald-950 text-emerald-300 font-mono text-xs font-bold px-1.5 py-0.5 rounded border border-emerald-800/60" title={`UF do Candidato: ${cand.uf || 'BR'}`}>
+                          {cand.uf || 'BR'}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-right font-bold text-emerald-400">{formatMoeda(cand.total)}</td>
-                    <td className="px-4 py-3 text-center text-gray-500">{isExpanded ? '▼' : '▶'}</td>
+                    <td className="px-4 py-3 text-right font-bold text-sm font-mono text-emerald-400 whitespace-nowrap">{formatMoeda(cand.total)}</td>
+                    <td className="px-4 py-3 text-center text-gray-500 text-xs">{isExpanded ? '▼' : '▶'}</td>
                   </tr>
                   
-                  {/* Sub-tabela Expandida */}
                   {isExpanded && cand.doadores && (
                     <tr className="bg-[#0f172a]/80 border-l-2 border-l-emerald-500">
                       <td colSpan="3" className="p-0">
-                        <div className="px-6 py-4 max-h-[300px] overflow-y-auto">
+                        <div className="px-6 py-4 max-h-[320px] overflow-y-auto">
                           
-                          {/* NOVO: Badges com informações do Candidato (Partido, Cargo, UF) */}
-                          <div className="flex flex-wrap gap-2 mb-4">
-                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-[10px] font-bold uppercase text-gray-300 shadow-sm">
+                          {/* Badges do Candidato */}
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-xs font-bold uppercase text-gray-300 shadow-sm">
                               <span className="text-gray-500 mr-1">Partido:</span>{cand.partido}
                             </span>
-                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-[10px] font-bold uppercase text-gray-300 shadow-sm">
+                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-xs font-bold uppercase text-gray-300 shadow-sm">
                               <span className="text-gray-500 mr-1">Cargo:</span>{cand.cargo}
                             </span>
-                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-[10px] font-bold uppercase text-gray-300 shadow-sm">
+                            <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-xs font-bold uppercase text-gray-300 shadow-sm">
                               <span className="text-gray-500 mr-1">UF:</span>{cand.uf}
                             </span>
                           </div>
@@ -577,8 +1477,15 @@
                             <tbody className="divide-y divide-gray-800/50">
                               {cand.doadores.slice(0, 50).map((d, i) => (
                                 <tr key={i} className="hover:bg-gray-800/40 transition-colors">
-                                  <td className="py-2">{d.doador}</td>
-                                  <td className="py-2 text-right text-blue-400 font-semibold">{formatMoeda(d.valor)}</td>
+                                  <td className="py-2.5">
+                                    <div className="flex items-center justify-between gap-2 min-w-0" title={d.doador}>
+                                      <span className="truncate font-medium text-slate-200">{d.doador}</span>
+                                      <span className="shrink-0 bg-slate-800 text-amber-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-slate-700" title={`UF do Doador: ${d.uf && d.uf !== '-' ? d.uf : 'Não informada no TSE'}`}>
+                                        {d.uf && d.uf !== '-' ? d.uf : 'N/I'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 text-right text-blue-400 font-semibold font-mono">{formatMoeda(d.valor)}</td>
                                 </tr>
                               ))}
                               {cand.doadores.length > 50 && (
@@ -605,16 +1512,30 @@
 
     function App() {
       // Metadados e Filtros
-      const [apenasPrivado, setApenasPrivado] = useState(true);
+      const [modoRecurso, setModoRecurso] = useState('privado'); // Inicialização padrão: 'Somente Doações'
+      const apenasPrivado = modoRecurso !== 'todos';
       const [meta, setMeta] = useState(null);
       const [ano, setAno] = useState(ANOS_PADRAO[0]);
       const [cargo, setCargo] = useState("TODOS");
       const [uf, setUf] = useState(["TODAS"]);
-      const [partido, setPartido] = useState("TODOS");
+      const [partido, setPartido] = useState(["TODOS"]);
       const [municipio, setMunicipio] = useState("TODOS");
 
       // Seção Ativa (Mostrar 1 por vez)
       const [activeTab, setActiveTab] = useState("visao-geral");
+
+      // Resolução de Estado Único para controle de abas e gráficos territoriais
+      const ufsValidas = Array.isArray(uf) 
+        ? uf.filter(u => u && u.toUpperCase() !== "TODAS")
+        : (uf && uf.toUpperCase() !== "TODAS" ? [uf] : []);
+      const isEstadoUnico = ufsValidas.length === 1;
+
+      // Se estado único for selecionado manualmente (exceto Deputado Distrital, que possui rotas interestaduais próprias) e a aba ativa for geografia, redireciona para visão geral
+      useEffect(() => {
+        if (isEstadoUnico && cargo !== 'DEPUTADO DISTRITAL' && activeTab === 'geografia') {
+          setActiveTab('visao-geral');
+        }
+      }, [isEstadoUnico, cargo, activeTab]);
 
       // Estados de Dados
       const [globalData, setGlobalData] = useState(null);
@@ -630,40 +1551,64 @@
         }
       };
 
+      // Trava de integridade: Presidente = TODAS as UFs; Deputado Distrital = DF; restaura TODAS ao sair de Deputado Distrital
+      const prevCargoRef = useRef(cargo);
       useEffect(() => {
+        const prevCargo = prevCargoRef.current;
         if (cargo === 'PRESIDENTE') {
           setUf(["TODAS"]);
+        } else if (cargo === 'DEPUTADO DISTRITAL') {
+          setUf(["DF"]);
+        } else if (prevCargo === 'DEPUTADO DISTRITAL' || prevCargo === 'PRESIDENTE') {
+          setUf(["TODAS"]);
         }
+        prevCargoRef.current = cargo;
       }, [cargo]);
 
-      // Carrega metadados iniciais e dados globais
+      useEffect(() => {
+        // Se UF for selecionada e não incluir DF nem TODAS, e cargo for DEPUTADO DISTRITAL, reseta cargo
+        if (Array.isArray(uf) && !uf.includes("TODAS") && !uf.includes("DF") && cargo === "DEPUTADO DISTRITAL") {
+          setCargo("TODOS");
+        }
+      }, [uf, cargo]);
+
+      // Carrega metadados iniciais e dados globais (adaptado ao interruptor de 3 fases)
       useEffect(() => {
         Promise.all([
           fetch('/api/meta/filtros').then(r => r.json()),
-          fetch(`/api/global?apenas_privado=${apenasPrivado}`).then(r => r.json())
+          fetch(`/api/global?modo_recurso=${modoRecurso}`).then(r => r.json())
         ]).then(([metaRes, globRes]) => {
           setMeta(metaRes);
           setGlobalData(globRes);
           setLoading(false);
         }).catch(err => console.error("Erro ao carregar dados iniciais:", err));
-      }, [apenasPrivado]);
+      }, [modoRecurso]);
 
-      // Atualiza cargos disponíveis quando ano muda (Travas 2018/2022 vs 2020/2024)
+      // Atualiza cargos disponíveis quando ano muda (Travas 2018/2022 vs 2020/2024 e Trava DF)
       useEffect(() => {
         if (!meta) return;
-        const cargosValidos = meta.cargos_por_ano?.[ano] || CARGOS_PADRAO[ano] || [];
-        if (cargo !== "TODOS" && !cargosValidos.includes(cargo)) {
+        const isMunicipalYear = String(ano).includes('2020') || String(ano).includes('2024');
+        const anoBase = isMunicipalYear ? 2020 : 2022;
+        const cargosValidosList = meta.cargos_por_ano?.[anoBase] || CARGOS_PADRAO[anoBase] || [];
+        if (cargo !== "TODOS" && !cargosValidosList.includes(cargo) && cargo !== "DEPUTADO DISTRITAL") {
           setCargo("TODOS");
         }
-        // Desativa município se for 2018 ou 2022
-        if (ano === 2018 || ano === 2022) {
+        // Desativa município se for eleição geral
+        if (!isMunicipalYear) {
           setMunicipio("TODOS");
+        }
+        // Trava DF: Oculta/remove DF em eleições municipais (Art. 32 CF/88)
+        if (isMunicipalYear && Array.isArray(uf) && uf.includes("DF")) {
+          const ufsSemDf = uf.filter(u => u !== "DF");
+          setUf(ufsSemDf.length > 0 ? ufsSemDf : ["TODAS"]);
         }
       }, [ano, meta]);
 
-      // Carrega dados da seção dinâmica ativa
+      // Carrega dados da seção dinâmica ativa com cancelamento de requisições obsoletas
       useEffect(() => {
         if (!meta) return;
+        let isCancelled = false;
+        setDynamicLoading(true);
 
         const timer = setTimeout(() => {
           let url = '';
@@ -681,24 +1626,36 @@
             params.append("uf", uf);
           }
 
-          if (partido && partido !== "TODOS") params.append("partido", partido);
+          if (Array.isArray(partido)) {
+            const partidosValidos = partido.filter(p => p !== "TODOS");
+            if (partidosValidos.length > 0) {
+              params.append("partido", partidosValidos.join(","));
+            }
+          } else if (partido && partido !== "TODOS") {
+            params.append("partido", partido);
+          }
           if (municipio && municipio !== "TODOS") params.append("municipio", municipio);
 
+          params.append("modo_recurso", modoRecurso);
           params.append("apenas_privado", apenasPrivado);
 
           const currentTab = activeTab;
 
           if (currentTab === "visao-geral") {
             url = `/api/visao-geral?${params.toString()}`;
+          } else if (currentTab === "geografia") {
+            url = `/api/geografia?${params.toString()}`;
           } else if (currentTab === "custo-do-voto") {
             if (!cargo || cargo === "TODOS") {
-              setDynamicData(null);
-              setDynamicLoading(false);
+              if (!isCancelled) {
+                setDynamicData(null);
+                setDynamicLoading(false);
+              }
               return;
             }
             url = `/api/custo-do-voto?${params.toString()}`;
-          } else if (currentTab === "porta-giratoria") {
-            url = `/api/porta-giratoria?${params.toString()}`;
+          } else if (currentTab === "teia-empresarial") {
+            url = `/api/teia-empresarial?${params.toString()}`;
           } else if (currentTab === "origem-autofinanciamento") {
             url = `/api/origem-autofinanciamento?${params.toString()}`;
           }
@@ -711,19 +1668,26 @@
                 return r.json();
               })
               .then(data => {
-                setDynamicData({ tab: currentTab, ...data });
-                setDynamicLoading(false);
+                if (!isCancelled) {
+                  setDynamicData({ tab: currentTab, ...data });
+                  setDynamicLoading(false);
+                }
               })
               .catch(err => {
-                console.error("Erro ao carregar seção dinâmica:", err);
-                setDynamicLoading(false);
+                if (!isCancelled) {
+                  console.error("Erro ao carregar seção dinâmica:", err);
+                  setDynamicLoading(false);
+                }
               });
           }
         }, 300); // Debounce de 300ms
         
-        return () => clearTimeout(timer);
+        return () => {
+          isCancelled = true;
+          clearTimeout(timer);
+        };
 
-      }, [activeTab, ano, cargo, uf, partido, municipio, meta, apenasPrivado]);
+      }, [activeTab, ano, cargo, uf, partido, municipio, meta, modoRecurso]);
 
       if (loading || !globalData) {
         return (
@@ -733,15 +1697,16 @@
         );
       }
 
-      const isGeralYear = ano === 2018 || ano === 2022;
-      const rawCargos = (meta?.cargos_por_ano && Array.isArray(meta.cargos_por_ano[ano]) && meta.cargos_por_ano[ano].length) ? meta.cargos_por_ano[ano] : (CARGOS_PADRAO[ano] || []);
+      const anoBase = String(ano).includes('2020') || String(ano).includes('2024') ? 2020 : 2022;
+      const isGeralYear = !String(ano).includes('2020') && !String(ano).includes('2024');
+      const rawCargos = (meta?.cargos_por_ano && Array.isArray(meta.cargos_por_ano[anoBase]) && meta.cargos_por_ano[anoBase].length) ? meta.cargos_por_ano[anoBase] : (CARGOS_PADRAO[anoBase] || []);
       const cargosValidos = [...rawCargos];
       if (isGeralYear && !cargosValidos.includes("DEPUTADO DISTRITAL")) {
         cargosValidos.splice(2, 0, "DEPUTADO DISTRITAL");
       }
 
       return (
-        <div className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+        <div className="w-full max-w-7xl xl:max-w-[1400px] 2xl:max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
           <header className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-800 pb-4 mb-6 gap-4">
             <div className="flex items-center space-x-3">
               <div className="w-3 h-8 bg-blue-500 rounded-sm"></div>
@@ -750,21 +1715,44 @@
                 <span className="text-xs text-blue-400 font-mono tracking-widest uppercase">BASE ELEITORAL BRASILEIRA 2018–2024</span>
               </div>
             </div>
-            {/* O BOTÃO GLOBAL AQUI */}
-            <div className="flex items-center space-x-3 bg-[#0f172a] border border-blue-500/40 rounded-lg px-4 py-2">
-              <span className="text-sm font-bold uppercase tracking-wider text-blue-300">Análise de Origem:</span>
-              <button
-                type="button"
-                onClick={() => setApenasPrivado(!apenasPrivado)}
-                className={`w-14 h-7 flex items-center rounded-full p-1 duration-300 cursor-pointer ${
-                  apenasPrivado ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
-                }`}
-              >
-                <div className="bg-white w-5 h-5 rounded-full shadow-md transform transition"></div>
-              </button>
-              <span className="text-sm text-slate-300 font-semibold">
-                  {apenasPrivado ? 'Somente Financiamento Privado' : 'Todos os Recursos (Inclui Fundos)'}
-              </span>
+            {/* INTERRUPTOR GLOBAL EM 3 FASES */}
+            <div className="flex items-center space-x-2 bg-[#0f172a] border border-blue-500/40 rounded-lg p-1.5 shadow-lg">
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-300 ml-2 mr-1">Origem dos Recursos:</span>
+              <div className="flex bg-gray-900/90 rounded-md p-0.5 border border-gray-700/60">
+                <button
+                  type="button"
+                  onClick={() => setModoRecurso('todos')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded transition-all cursor-pointer ${
+                    modoRecurso === 'todos'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Todos os Recursos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoRecurso('privado')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded transition-all cursor-pointer ${
+                    modoRecurso === 'privado'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Somente Doações
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoRecurso('elite')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded transition-all cursor-pointer ${
+                    modoRecurso === 'elite'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Elite Empresarial
+                </button>
+              </div>
             </div>
           </header>
           
@@ -777,29 +1765,29 @@
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
                 <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume Financeiro Ativo</span>
-                <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatMoeda(globalData.kpis.volume_financeiro_ativo)}</span>
+                <span className="text-2xl font-bold text-blue-400 mt-1 block font-mono">{formatMoeda(globalData.kpis.volume_financeiro_ativo)}</span>
               </div>
               <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
                 <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Candidaturas no Recorte</span>
-                <span className="text-2xl font-bold text-emerald-400 mt-1 block">{formatNumero(globalData.kpis.candidaturas_no_recorte)}</span>
+                <span className="text-2xl font-bold text-emerald-400 mt-1 block font-mono">{formatNumero(globalData.kpis.candidaturas_no_recorte)}</span>
               </div>
               <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
                 <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Doadores no Recorte</span>
-                <span className="text-2xl font-bold text-amber-400 mt-1 block">{formatNumero(globalData.kpis.doadores_no_recorte)}</span>
+                <span className="text-2xl font-bold text-amber-400 mt-1 block font-mono">{formatNumero(globalData.kpis.doadores_no_recorte)}</span>
               </div>
               <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
                 <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Transações Registradas</span>
-                <span className="text-2xl font-bold text-purple-400 mt-1 block">{formatNumero(globalData.kpis.transacoes_registradas)}</span>
+                <span className="text-2xl font-bold text-purple-400 mt-1 block font-mono">{formatNumero(globalData.kpis.transacoes_registradas)}</span>
               </div>
             </div>
 
             {/* 4 Gráficos Globais */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
-              {/* Gráfico 1: Top 10 Doadores (Tabela Expansível - BLOCO GLOBAL FIXO) */}
+              {/* Gráfico 1: Ranking de Doadores (Tabela Expansível - BLOCO GLOBAL FIXO) */}
               <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg flex flex-col h-full">
                 <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide flex justify-between items-center">
-                  Top 10 Maiores Doadores Globais
+                  Ranking de Maiores Doadores Globais
                   <span className="text-[10px] font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">Clique na linha para expandir</span>
                 </h3>
                 <div className="flex-1">
@@ -807,10 +1795,10 @@
                 </div>
               </div>
 
-              {/* Gráfico 2: Top 10 Candidatos Mais Financiados */}
+              {/* Gráfico 2: Ranking de Candidatos Mais Financiados */}
               <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg flex flex-col h-full">
                 <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide flex justify-between items-center">
-                  Top 10 Candidatos Mais Financiados
+                  Ranking de Candidatos Mais Financiados
                   <span className="text-[10px] font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">Clique para auditar origem</span>
                 </h3>
                 <div className="flex-1">
@@ -838,7 +1826,7 @@
 
               {/* Gráfico 4: Autofinanciamento: Os Maiores Investidores da Própria Campanha */}
               <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Autofinanciamento: Os Maiores Investidores da Própria Campanha</h3>
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Autofinanciamento: Maiores Investidores da Própria Campanha</h3>
                 <ChartCanvas
                   type="bar"
                   id="chart-global-auto"
@@ -848,6 +1836,44 @@
                       label: 'Aporte Próprio (R$)',
                       data: globalData.graficos.top_autofinanciamento.map(d => d.total_proprio),
                       backgroundColor: '#f59e0b',
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{ indexAxis: 'y' }}
+                />
+              </div>
+
+              {/* Gráfico 5: Ranking de Partidos em Volume Financeiro */}
+              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Ranking de Partidos em Volume Financeiro</h3>
+                <ChartCanvas
+                  type="bar"
+                  id="chart-global-partidos"
+                  data={{
+                    labels: (globalData?.graficos?.top_10_partidos || []).map(d => d.partido),
+                    datasets: [{
+                      label: 'Volume Total (R$)',
+                      data: (globalData?.graficos?.top_10_partidos || []).map(d => d.total),
+                      backgroundColor: '#10b981',
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{ indexAxis: 'y' }}
+                />
+              </div>
+
+              {/* Gráfico 6: Ranking Federativo Global (Top Estados) */}
+              <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Ranking Federativo (Top Estados)</h3>
+                <ChartCanvas
+                  type="bar"
+                  id="chart-global-ranking-estados"
+                  data={{
+                    labels: (globalData?.graficos?.ranking_estados || []).map(d => d.uf),
+                    datasets: [{
+                      label: 'Volume Total (R$)',
+                      data: (globalData?.graficos?.ranking_estados || []).map(d => d.total),
+                      backgroundColor: '#3b82f6',
                       borderRadius: 4,
                     }]
                   }}
@@ -874,15 +1900,24 @@
                   onChange={e => {
                     setDynamicData(null);
                     setDynamicLoading(true);
-                    setAno(Number(e.target.value));
+                    setAno(e.target.value);
                   }}
                   className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
                 >
-                  {(meta?.anos && meta.anos.length ? meta.anos : ANOS_PADRAO).map(a => <option key={a} value={a}>{a}</option>)}
+                  <optgroup label="Eleições Individuais">
+                    <option value="2018">2018 (Geral)</option>
+                    <option value="2020">2020 (Municipal)</option>
+                    <option value="2022">2022 (Geral)</option>
+                    <option value="2024">2024 (Municipal)</option>
+                  </optgroup>
+                  <optgroup label="Ciclos Eleitorais Agrupados">
+                    <option value="2018,2022">2018 + 2022 (Ciclo Geral Consolidado)</option>
+                    <option value="2020,2024">2020 + 2024 (Ciclo Municipal Consolidado)</option>
+                  </optgroup>
                 </select>
               </div>
 
-              {/* Filtro: Cargo (Travas Eleitorais 2018/2022 vs 2020/2024) */}
+              {/* Filtro: Cargo (Travas Eleitorais 2018/2022 vs 2020/2024 e Trava DF) */}
               <div>
                 <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Cargo em Disputa</label>
                 <select
@@ -895,7 +1930,18 @@
                   className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
                 >
                   <option value="TODOS">Todos os Cargos</option>
-                  {cargosValidos.filter(c => c !== "TODOS").map(c => <option key={c} value={c}>{c}</option>)}
+                  {cargosValidos.filter(c => {
+                    if (c === "TODOS") return false;
+                    // Trava DF: Oculta DEPUTADO DISTRITAL se o usuário filtrou UFs sem o DF
+                    if (c === "DEPUTADO DISTRITAL" && Array.isArray(uf) && !uf.includes("TODAS") && !uf.includes("DF")) {
+                      return false;
+                    }
+                    // Trava DF: Oculta PREFEITO e VEREADOR se o DF for selecionado exclusivamente
+                    if ((c === "PREFEITO" || c === "VEREADOR") && Array.isArray(uf) && uf.length === 1 && uf.includes("DF")) {
+                      return false;
+                    }
+                    return true;
+                  }).map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
 
@@ -904,26 +1950,19 @@
                 <DropdownEstados 
                   uf={uf} 
                   setUf={setUf} 
-                  disabled={cargo === 'PRESIDENTE'} 
+                  disabled={cargo === 'PRESIDENTE' || cargo === 'DEPUTADO DISTRITAL'} 
                   ufsValidas={meta?.ufs || []} 
+                  isMunicipal={String(ano).includes('2020') || String(ano).includes('2024')}
                 />
               </div>
 
-              {/* Filtro: Partido */}
+              {/* Filtro: Partido (Multi-seleção com Busca Rápida) */}
               <div>
-                <label className="text-xs uppercase font-bold text-blue-300 tracking-wider block mb-1">Legenda Partidária</label>
-                <select
-                  value={partido}
-                  onChange={e => {
-                    setDynamicData(null);
-                    setDynamicLoading(true);
-                    setPartido(e.target.value);
-                  }}
-                  className="w-full bg-[#0f172a] border border-blue-500/50 rounded-lg px-3 py-2 text-sm text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
-                >
-                  <option value="TODOS">Todos os Partidos</option>
-                  {(meta?.partidos && meta.partidos.length ? meta.partidos : PARTIDOS_PADRAO).map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+                <DropdownPartidos 
+                  partido={partido} 
+                  setPartido={setPartido} 
+                  partidosValidos={meta?.partidos && meta.partidos.length ? meta.partidos : PARTIDOS_PADRAO} 
+                />
               </div>
 
               {/* {Filtro: Município (Desativado)}
@@ -955,10 +1994,12 @@
           <div className="flex border-b border-gray-800 space-x-2">
             {[
               { id: 'visao-geral', label: 'Visão Geral' },
+              { id: 'geografia', label: 'Análise Geográfica & Fluxo de Recursos' },
               { id: 'custo-do-voto', label: 'Custo do Voto' },
-              { id: 'porta-giratoria', label: 'Porta Giratória' },
+              { id: 'teia-empresarial', label: 'Teia Empresarial & Setores' },
               { id: 'origem-autofinanciamento', label: 'Origem dos Recursos & Autofinanciamento' },
-            ].map(tab => (
+            ].filter(tab => !(isEstadoUnico && cargo !== 'DEPUTADO DISTRITAL' && tab.id === 'geografia'))
+             .map(tab => (
               <button
                 type="button"
                 key={tab.id}
@@ -1007,42 +2048,104 @@
                     <span className="text-2xl font-bold text-amber-400 mt-1 block">{formatNumero(dynamicData.kpis.num_doadores)}</span>
                   </div>
                   <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
-                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Taxa Sucesso: Top 10% vs Bottom 50%</span>
-                    <span className="text-2xl font-bold text-purple-400 mt-1 block">
-                      {(dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0).toFixed(1)}%
+                    <span className="text-xs uppercase tracking-wider text-purple-300 font-semibold block flex justify-between items-center">
+                      <span>Poder Econômico: Vitória</span>
                     </span>
-                    <span className="text-xs text-gray-400 mt-0.5 block">
-                      {(dynamicData.kpis?.taxa_sucesso_decil?.diferenca_sucesso || 0) >= 0 ? '+' : ''}{(dynamicData.kpis?.taxa_sucesso_decil?.diferenca_sucesso || 0).toFixed(1)}% vs Bottom 50% ({(dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0).toFixed(1)}%)
-                    </span>
+                    <div className="flex items-baseline space-x-1.5 mt-1">
+                      <span className="text-2xl font-bold text-purple-400">
+                        {((dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0) > 0 
+                          ? ((dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0) / (dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 1)).toFixed(1) 
+                          : ((dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0) > 0 ? '>10' : '1.0'))}x
+                      </span>
+                      <span className="text-xs text-gray-300 font-medium">mais chances para os mais ricos</span>
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-1.5 flex justify-between border-t border-gray-700/60 pt-1.5">
+                      <span>Top 10%: <strong className="text-emerald-400 font-mono">{(dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0).toFixed(1)}%</strong></span>
+                      <span>Base 50%: <strong className="text-slate-400 font-mono">{(dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0).toFixed(1)}%</strong></span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Gráficos Dinâmicos da Visão Geral */}
+                                {/* LINHA 1: Rankings Principais (Tabelas Detalhadas) */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  
-                  {/* Top 10 Doadores (Tabela Expansível - ABA VISÃO GERAL) */}
+                  {/* Ranking de Doadores */}
                   <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg flex flex-col h-full">
                     <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide flex justify-between items-center">
-                      Top 10 Maiores Doadores
+                      Ranking de Maiores Doadores
                       <span className="text-[10px] font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">Clique na linha para expandir</span>
                     </h3>
                     <div className="flex-1">
-                      {/* O ponto de interrogação abaixo blinda o sistema contra erros caso o dado demore a carregar */}
                       <TabelaTopDoadoresExpandivel doadores={dynamicData?.top_10_doadores || []} />
                     </div>
                   </div>
 
-                  {/* Top 10 Candidatos Mais Financiados */}
+                  {/* Ranking de Candidatos Mais Financiados */}
                   <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg flex flex-col h-full">
                     <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide flex justify-between items-center">
-                      Top 10 Candidatos Mais Financiados
+                      Ranking de Candidatos Mais Financiados
                       <span className="text-[10px] font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">Clique para auditar origem</span>
                     </h3>
                     <div className="flex-1">
                       <TabelaTopCandidatosExpandivel candidatos={dynamicData?.top_10_candidatos || []} />
                     </div>
                   </div>
+                </div>
 
+                {/* LINHA 2: Rankings Categóricos Horizontais (Partidos & Estados) */}
+                <div className={`grid gap-6 ${(isEstadoUnico || cargo === 'PRESIDENTE' || cargo === 'DEPUTADO DISTRITAL') ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}>
+                  {/* Ranking de Partidos no Recorte / Distribuição por Cargo se Partido Único */}
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                      {dynamicData.is_partido_unico 
+                        ? `Distribuição por Cargo (${dynamicData.partido_selecionado})`
+                        : cargo === 'PRESIDENTE'
+                          ? 'Ranking de Partidos no Recorte (Presidência da República)'
+                          : isEstadoUnico 
+                            ? `Ranking de Partidos no Recorte (${ufsValidas[0]})`
+                            : 'Ranking de Partidos no Recorte'}
+                    </h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-vg-partidos"
+                      data={{
+                        labels: (dynamicData.top_10_partidos || []).map(d => d.partido),
+                        datasets: [{
+                          label: 'Volume Total (R$)',
+                          data: (dynamicData.top_10_partidos || []).map(d => d.total),
+                          backgroundColor: '#10b981',
+                          borderRadius: 4,
+                        }]
+                      }}
+                      options={{ indexAxis: 'y' }}
+                    />
+                  </div>
+
+                  {/* Ranking Federativo (Top Estados no Recorte) - Oculto se Estado Único, Presidente ou Deputado Distrital */}
+                  {!(isEstadoUnico || cargo === 'PRESIDENTE' || cargo === 'DEPUTADO DISTRITAL') && (
+                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                        Ranking Federativo (Top Estados no Recorte)
+                      </h3>
+                      <ChartCanvas
+                        type="bar"
+                        id="chart-vg-ranking-estados"
+                        data={{
+                          labels: (dynamicData.ranking_estados || []).map(d => d.uf),
+                          datasets: [{
+                            label: 'Volume Total (R$)',
+                            data: (dynamicData.ranking_estados || []).map(d => d.total),
+                            backgroundColor: '#3b82f6',
+                            borderRadius: 4,
+                          }]
+                        }}
+                        options={{ indexAxis: 'y' }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* LINHA 3: Gráficos de Barra Verticais (Distribuição Logarítmica & Detalhamento/Composição) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Distribuição Logarítmica */}
                   <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
                     <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Distribuição do Volume Arrecadado (Escala Logarítmica)</h3>
@@ -1061,84 +2164,190 @@
                     />
                   </div>
 
-                  {/* Composição por Origem do Recurso - Oculto se Apenas Privado */}
-                  {!apenasPrivado && (
+                  {/* Gráfico Adaptativo: Detalhamento do Financiamento Privado / Composição / Elite */}
+                  {modoRecurso === 'elite' ? (
                     <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Composição por Origem do Recurso</h3>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-gray-300 tracking-wide">
+                          Taxa de Vitória Comparativa (% de Eleitos)
+                        </h3>
+                        <span className="text-[11px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60 font-medium">
+                          Com Apoio da Elite vs Sem Apoio
+                        </span>
+                      </div>
                       <ChartCanvas
                         type="bar"
-                        id="chart-vg-origem"
-                      data={{
-                        labels: (dynamicData.origem_recursos || []).map(d => d.origem),
-                        datasets: [{
-                          label: 'Volume (R$)',
-                          data: (dynamicData.origem_recursos || []).map(d => d.total),
-                          backgroundColor: '#ec4899',
-                          borderRadius: 4,
-                        }]
-                      }}
-                    />
-                  </div>
-                  )}
-
-                  {/* Ranking Federativo (Top Estados) - Oculto se PRESIDENTE ou um só Estado*/}
-                  {cargo !== 'PRESIDENTE' && (uf.includes('TODAS') || uf.length > 1) && (
-                  <React.Fragment>
-                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg lg:col-span-2">
-                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Ranking Federativo (Top Estados)</h3>
-                      <ChartCanvas
-                        type="bar"
-                        id="chart-vg-ranking-estados"
+                        id="chart-vg-assertividade-elite"
                         data={{
-                          labels: (dynamicData.panorama_uf || []).slice(0, 10).map(d => d.uf),
+                          labels: (dynamicData.assertividade_elite || []).map(d => d.status),
                           datasets: [{
-                            label: 'Volume Total (R$)',
-                            data: (dynamicData.panorama_uf || []).slice(0, 10).map(d => d.total),
-                            backgroundColor: '#3b82f6',
+                            label: 'Taxa de Vitória (%)',
+                            data: (dynamicData.assertividade_elite || []).map(d => d.taxa_sucesso || 0),
+                            backgroundColor: (dynamicData.assertividade_elite || []).map(d => 
+                              d.status.includes('Com Apoio') ? '#10b981' : '#64748b'
+                            ),
                             borderRadius: 4,
                           }]
                         }}
                         options={{
                           indexAxis: 'y',
-                          plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                              callbacks: {
-                                label: function(context) {
-                                  return `Volume Total: ${formatMoeda(context.raw)}`;
-                                }
-                              }
-                            }
-                          },
                           scales: {
                             x: {
-                              ticks: {
-                                color: '#9ca3af',
-                                font: { size: 10 },
-                                callback: function(value) {
-                                  if (value >= 1000000000) return 'R$ ' + (value / 1000000000).toFixed(1) + 'B';
-                                  if (value >= 1000000) return 'R$ ' + (value / 1000000).toFixed(0) + 'M';
-                                  if (value >= 1000) return 'R$ ' + (value / 1000).toFixed(0) + 'k';
-                                  return 'R$ ' + value;
-                                }
-                              },
-                              grid: { color: '#1f2937' }
-                            },
-                            y: {
-                              ticks: { color: '#9ca3af', font: { size: 10 } },
-                              grid: { display: false }
+                              ticks: { callback: (val) => val + '%', color: '#9ca3af' },
+                              grid: { color: '#1f2937' },
+                              max: 100
                             }
+                          },
+                          plugins: {
+                            legend: { display: false }
                           }
                         }}
                       />
                     </div>
+                  ) : (
+                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                        {modoRecurso === 'privado' ? 'Detalhamento do Financiamento Privado' : 'Composição por Origem do Recurso'}
+                      </h3>
+                      <ChartCanvas
+                        type="bar"
+                        id="chart-vg-origem"
+                        data={{
+                          labels: (dynamicData.origem_recursos || []).map(d => d.origem),
+                          datasets: [{
+                            label: 'Volume (R$)',
+                            data: (dynamicData.origem_recursos || []).map(d => d.total),
+                            backgroundColor: '#ec4899',
+                            borderRadius: 4,
+                          }]
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
-                    {/* Panorama Federativo e Mapa de Calor do Brasil (Heatmap) */}
+
+
+            {/* ------------------------------------------------------------- */}
+            {/* SEÇÃO DINÂMICA 2: ANÁLISE GEOGRÁFICA & FLUXO DE RECURSOS        */}
+            {/* ------------------------------------------------------------- */}
+            {!dynamicLoading && activeTab === 'geografia' && dynamicData?.tab === 'geografia' && dynamicData?.kpis && (
+              <div className="space-y-6">
+                {/* 4 KPIs Territoriais */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume no Recorte Territorial</span>
+                    <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatMoeda(dynamicData.kpis.volume_total)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">UFs com Candidaturas Ativas</span>
+                    <span className="text-2xl font-bold text-emerald-400 mt-1 block">{formatNumero(dynamicData.kpis.ufs_ativas)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Rotas de Origem Mapeadas</span>
+                    <span className="text-2xl font-bold text-amber-400 mt-1 block">{formatNumero(dynamicData.kpis.total_rotas_interestaduais)}</span>
+                  </div>
+                  <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume em Rotas Interestaduais</span>
+                    <span className="text-2xl font-bold text-purple-400 mt-1 block">{formatMoeda(dynamicData.kpis.volume_interestadual)}</span>
+                  </div>
+                </div>
+
+                {/* Linha 1: Mapa de Calor Nacional OU Nota de Circunscrição Única (Presidente / Deputado Distrital) */}
+                {cargo === 'PRESIDENTE' || cargo === 'DEPUTADO DISTRITAL' ? (
+                  <div className="bg-[#1f2937]/40 border border-blue-500/30 rounded-lg px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg">🌐</span>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-bold text-white">
+                          {cargo === 'PRESIDENTE'
+                            ? 'Disputa de Circunscrição Nacional (UF de Candidatura = BR)'
+                            : 'Disputa de Circunscrição Distrital Única (UF de Candidatura = DF)'}
+                        </h4>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {cargo === 'PRESIDENTE'
+                            ? 'O Mapa de Calor de candidaturas por estado é ocultado pois a disputa presidencial é nacional, mas a tabela abaixo rastreia de quais estados (UFs de origem das empresas/sócios) partiram os recursos para as campanhas presidenciais.'
+                            : 'O Mapa de Calor nacional é ocultado pois o cargo pertence exclusivamente ao DF, mas a tabela abaixo revela as rotas interestaduais de doadores e empresas de outros estados financiando candidatos a Deputado Distrital.'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 bg-blue-950/80 text-blue-300 font-mono text-[11px] font-bold px-2.5 py-1 rounded border border-blue-800/60">
+                      Cruzamento RFB (uf_empresa) Ativo
+                    </span>
+                  </div>
+                ) : dynamicData.is_estado_unico ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                    {/* Ranking Partidário Estadual */}
+                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                        Ranking Partidário Estadual — {dynamicData.uf_selecionada}
+                      </h3>
+                      <ChartCanvas
+                        type="bar"
+                        id="chart-geo-partidos-uf"
+                        data={{
+                          labels: (dynamicData.distribuicao_partidos_uf || []).map(d => d.partido),
+                          datasets: [{
+                            label: 'Volume Total (R$)',
+                            data: (dynamicData.distribuicao_partidos_uf || []).map(d => d.total),
+                            backgroundColor: '#10b981',
+                            borderRadius: 4,
+                          }]
+                        }}
+                        options={{ indexAxis: 'y' }}
+                      />
+                    </div>
+
+                    {/* Distribuição por Cargo na UF */}
+                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                        Distribuição de Recursos por Cargo — {dynamicData.uf_selecionada}
+                      </h3>
+                      <ChartCanvas
+                        type="bar"
+                        id="chart-geo-cargos-uf"
+                        data={{
+                          labels: (dynamicData.distribuicao_cargos_uf || []).map(d => d.cargo),
+                          datasets: [{
+                            label: 'Volume Total (R$)',
+                            data: (dynamicData.distribuicao_cargos_uf || []).map(d => d.total),
+                            backgroundColor: '#3b82f6',
+                            borderRadius: 4,
+                          }]
+                        }}
+                        options={{ indexAxis: 'y' }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  /* Panorama Federativo e Mapa de Calor do Brasil em Largura Total */
+                  <div>
                     <PanoramaFederativoHeatmap 
                       data={(dynamicData.panorama_uf || []).filter(d => d.uf && d.uf.trim() !== '')} 
-                    />                  
-                  </React.Fragment>
-                  )}
+                    />
+                  </div>
+                )}
+
+                {/* Linha 2: Rotas de Influência Interestadual em Largura Total */}
+                <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-4">
+                  <div className="border-b border-gray-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                        Rotas de Influência Interestadual
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Mapeamento auditável das transferências onde o domicílio/sede de origem (incluindo UF da empresa na Receita Federal) difere do estado de candidatura.
+                      </p>
+                    </div>
+                    <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-800/60 shrink-0">
+                      {(dynamicData.rotas_influencia || []).length} rotas identificadas
+                    </span>
+                  </div>
+
+                  <TabelaRotasInfluenciaExpandivel rotas={dynamicData.rotas_influencia || []} />
                 </div>
               </div>
             )}
@@ -1249,88 +2458,87 @@
 
 
             {/* ------------------------------------------------------------- */}
-            {/* SEÇÃO DINÂMICA 3: PORTA GIRATÓRIA (REGEX HIGIENIZADO)         */}
+            {/* SEÇÃO DINÂMICA 4: TEIA EMPRESARIAL & SETORES (NOVA INTELIGÊNCIA) */}
             {/* ------------------------------------------------------------- */}
-            {!dynamicLoading && activeTab === 'porta-giratoria' && dynamicData?.tab === 'porta-giratoria' && dynamicData?.kpis && (
+            {!dynamicLoading && activeTab === 'teia-empresarial' && dynamicData?.tab === 'teia-empresarial' && dynamicData?.kpis && (
               <div className="space-y-6">
                 
-                {/* 4 KPIs Porta Giratória */}
+                {/* 4 KPIs da Teia Empresarial */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
-                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume Total em Retorno</span>
-                    <span className="text-2xl font-bold text-rose-400 mt-1 block">{formatMoeda(dynamicData.kpis?.volume_total_retorno || 0)}</span>
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume da Elite Empresarial</span>
+                    <span className="text-2xl font-bold text-emerald-400 mt-1 block">{formatMoeda(dynamicData.kpis.volume_elite)}</span>
                   </div>
                   <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
-                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Campanhas com Ocorrência</span>
-                    <span className="text-2xl font-bold text-amber-400 mt-1 block">{formatNumero(dynamicData.kpis?.campanhas_com_ocorrencia || 0)}</span>
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Sócios & Líderes Identificados</span>
+                    <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatNumero(dynamicData.kpis.doadores_elite)}</span>
+                    <span className="text-xs text-gray-400 mt-0.5 block">em {formatNumero(dynamicData.kpis.empresas_conectadas)} empresas</span>
                   </div>
                   <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
-                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Maior Taxa de Retorno Individual</span>
-                    <span className="text-2xl font-bold text-purple-400 mt-1 block">{formatNumero(Number(dynamicData.kpis?.maior_taxa_retorno || 0).toFixed(1))}%</span>
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Volume Destinado a Eleitos</span>
+                    <span className="text-2xl font-bold text-purple-400 mt-1 block">{formatMoeda(dynamicData.kpis.volume_para_eleitos)}</span>
                   </div>
                   <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
-                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Transações Identificadas</span>
-                    <span className="text-2xl font-bold text-blue-400 mt-1 block">{formatNumero(dynamicData.kpis?.transacoes_identificadas || 0)}</span>
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Taxa de Vitória com Apoio da Elite</span>
+                    <span className="text-2xl font-bold text-amber-400 mt-1 block">{dynamicData.kpis.sucesso_com_empresario.toFixed(1)}%</span>
+                    <span className="text-xs text-gray-400 mt-0.5 block">vs. {dynamicData.kpis.sucesso_sem_empresario.toFixed(1)}% sem apoio empresarial</span>
                   </div>
                 </div>
 
-                {/* Gráficos Porta Giratória */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  
-                  {/* Comparativo Bi-direcional */}
-                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Comparativo Bi-direcional: Doação vs. Fornecimento</h3>
-                    <ChartCanvas
-                      type="bar"
-                      id="chart-pg-bidirecional"
-                      data={{
-                        labels: (dynamicData.comparativo_bidirecional || []).slice(0,10).map(d => {
-                          const ent = String(d?.nome_doador || 'Entidade');
-                          return ent.length > 20 ? ent.substring(0, 20) + '...' : ent;
-                        }),
-                        datasets: [
-                          {
-                            label: 'Valor Doado (R$)',
-                            data: (dynamicData.comparativo_bidirecional || []).map(d => Number(d?.total_doado || 0)),
-                            backgroundColor: '#3b82f6',
-                            borderRadius: 4,
-                          },
-                          {
-                            label: 'Valor Fornecido (R$)',
-                            data: (dynamicData.comparativo_bidirecional || []).map(d => Number(d?.total_fornecedor || 0)),
-                            backgroundColor: '#f43f5e',
-                            borderRadius: 4,
-                          }
-                        ]
-                      }}
-                      options={{ indexAxis: 'y' }}
-                    />
+                {/* Linha 1: Ranking de Setores Econômicos (CNAE) - Largura Total */}
+                <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
+                    <div>
+                      <h3 className="text-base font-bold text-white tracking-wide">
+                        Ranking de Setores Econômicos Campeões em Financiamento (CNAE / IBGE)
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Distribuição do financiamento da elite empresarial agrupado pela atividade econômica principal das empresas vinculadas.
+                      </p>
+                    </div>
+                    <span className="text-xs text-emerald-400 font-mono bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-800/60 shrink-0">
+                      Clique na linha para ver os maiores aportes
+                    </span>
                   </div>
-
-                  {/* Ranking de Retorno */}
-                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Top Fornecedores em Retorno Financeiro</h3>
-                    <ChartCanvas
-                      type="bar"
-                      id="chart-pg-ranking"
-                      data={{
-                        labels: (dynamicData.ranking_porta_giratoria || []).slice(0, 10).map(d => {
-                          const doador = String(d?.nome_doador || 'Doador');
-                          const cand = String(d?.nome_candidato || 'Candidato');
-                          return `${doador.substring(0, 16)} ➔ ${cand.substring(0, 12)}`;
-                        }),
-                        datasets: [{
-                          label: 'Faturamento Fornecedor (R$)',
-                          data: (dynamicData.ranking_porta_giratoria || []).slice(0, 10).map(d => Number(d?.total_fornecedor || 0)),
-                          backgroundColor: '#f59e0b',
-                          borderRadius: 4,
-                        }]
-                      }}
-                      options={{ indexAxis: 'y' }}
-                    />
-                  </div>
-
+                  <TabelaTopSetoresExpandivel setores={dynamicData.top_setores || []} />
                 </div>
+
+                {/* Linha 2: Ranking de Grupos Empresariais (Razão Social dos Sócios Doadores) - Largura Total */}
+                <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
+                    <div>
+                      <h3 className="text-base font-bold text-white tracking-wide">
+                        Ranking de Grupos Empresariais (Razão Social dos Sócios Doadores)
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Empresas ativas cujos sócios e administradores mais injetaram recursos nas eleições mapeadas no recorte.
+                      </p>
+                    </div>
+                    <span className="text-xs text-blue-400 font-mono bg-blue-950/60 px-2.5 py-1 rounded border border-blue-800/60 shrink-0">
+                      Top 10 Grupos Corporativos
+                    </span>
+                  </div>
+                  <TabelaTopGruposEmpresariais empresas={dynamicData.top_empresas || []} />
+                </div>
+
+                {/* Linha 3: Os Maiores Financiadores da Elite Corporativa no Recorte - Largura Total Sem Cortes */}
+                <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
+                    <div>
+                      <h3 className="text-base font-bold text-white tracking-wide">
+                        Os Maiores Financiadores da Elite Corporativa no Recorte
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Sócios e dirigentes empresariais individuais que lideram o volume de doações privadas no cenário selecionado.
+                      </p>
+                    </div>
+                    <span className="text-xs text-amber-400 font-mono bg-amber-950/60 px-2.5 py-1 rounded border border-amber-800/60 shrink-0">
+                      Auditoria Individual QSA / RFB
+                    </span>
+                  </div>
+                  <TabelaMaioresSociosElite socios={dynamicData.maiores_socios || []} />
+                </div>
+
               </div>
             )}
 
@@ -1420,7 +2628,10 @@
 
                   {/* Evolução Histórica */}
                   <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">Evolução do Volume Financeiro por Origem</h3>
+                    <div className="flex flex-col mb-3">
+                      <h3 className="text-sm font-semibold text-gray-300 tracking-wide">Evolução do Volume Financeiro por Origem</h3>
+                      <span className="text-[11px] text-gray-400">Série Histórica Consolidada 2018–2024 (Recursos Próprios vs Terceiros)</span>
+                    </div>
                     <ChartCanvas
                       type="bar"
                       id="chart-auto-evolucao"
@@ -1453,6 +2664,56 @@
                 </div>
               </div>
             )}
+
+            {/* Notas Metodológicas e Auditoria de Qualidade de Dados (PACD) */}
+            <footer className="mt-14 border-t border-gray-800/80 pt-8 pb-14 space-y-6">
+              <div className="flex items-center space-x-2.5 text-gray-200 font-bold uppercase tracking-wider text-xs sm:text-sm">
+                <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse"></div>
+                <span>Auditoria de Qualidade dos Dados &amp; Notas Metodológicas de Pesquisa (PACD)</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-gray-300">
+                <div className="bg-[#111827]/90 border border-gray-800 p-5 rounded-lg shadow-sm hover:border-gray-700 transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-amber-950/80 text-amber-300 font-bold text-xs px-2 py-0.5 rounded border border-amber-800/60">Saneamento</span>
+                    <h4 className="font-semibold text-sm sm:text-base text-amber-300">1. Saneamento do Outlier do Amazonas (R$ 2,48 Bi)</h4>
+                  </div>
+                  <p className="text-xs sm:text-sm text-gray-300 leading-relaxed font-sans">
+                    Maior erro contábil identificado no SPCE/TSE (2020). Doação estimada de material gráfico compartilhado (rateio de R$ 2.486,00 entre 12 vereadores do Republicanos no AM = R$ 207,17 cada) sofreu deslocamento de 6 casas decimais sem pontuação, virando R$ 207.166.666,66 por candidato. Saneado cirurgicamente para R$ 207,17 na camada de análise para não inflacionar o estado em R$ 2,48 bilhões.
+                  </p>
+                </div>
+                <div className="bg-[#111827]/90 border border-gray-800 p-5 rounded-lg shadow-sm hover:border-gray-700 transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-amber-950/80 text-amber-300 font-bold text-xs px-2 py-0.5 rounded border border-amber-800/60">Saneamento</span>
+                    <h4 className="font-semibold text-sm sm:text-base text-amber-300">2. Saneamento do Outlier Norman Claudio (R$ 1,25 Bi)</h4>
+                  </div>
+                  <p className="text-xs sm:text-sm text-gray-300 leading-relaxed font-sans">
+                    No sistema SPCE/TSE de 2024 (Vereador, Salvador/BA), constava doação autodeclarada de R$ 1.250.125.000,00 da direção estadual do PSB. Tratando-se de erro grosseiro de digitação (repetição de &apos;1250&apos; sem vírgula decimal) para candidato com 137 votos, o valor foi saneado para R$ 1.250,00 na camada de visualização analítica.
+                  </p>
+                </div>
+                <div className="bg-[#111827]/90 border border-gray-800 p-5 rounded-lg shadow-sm hover:border-gray-700 transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-blue-950/80 text-blue-300 font-bold text-xs px-2 py-0.5 rounded border border-blue-800/60">Legislação</span>
+                    <h4 className="font-semibold text-sm sm:text-base text-gray-100">3. Autofinanciamento Histórico (R$ 57,03 Mi)</h4>
+                  </div>
+                  <p className="text-xs sm:text-sm text-gray-300 leading-relaxed font-sans">
+                    O caso recorde de Henrique Meirelles (R$ 57,03M na eleição presidencial de 2018) ocorreu sob a regra anterior à Lei nº 13.877/2019, que passou a limitar o autofinanciamento a 10% do teto de gastos do respectivo cargo a partir das eleições de 2020.
+                  </p>
+                </div>
+                <div className="bg-[#111827]/90 border border-gray-800 p-5 rounded-lg shadow-sm hover:border-gray-700 transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-emerald-950/80 text-emerald-300 font-bold text-xs px-2 py-0.5 rounded border border-emerald-800/60">Privacidade / LGPD</span>
+                    <h4 className="font-semibold text-sm sm:text-base text-gray-100">4. Fluxo Interestadual &amp; Sigilo de CPF</h4>
+                  </div>
+                  <p className="text-xs sm:text-sm text-gray-300 leading-relaxed font-sans">
+                    A legislação eleitoral e a LGPD resguardam o domicílio de pessoas físicas doadoras. Desta forma, rotas interestaduais privadas refletem apenas declarações explícitas; a quase totalidade do fluxo interestadual federativo decorre de cotas partidárias nacionais e campanhas presidenciais (&apos;BR&apos;).
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row justify-between items-center text-xs text-gray-400 pt-3 border-t border-gray-800/60 gap-2">
+                <span>Pesquisa Aplicada em Ciência de Dados (PACD) — Base Consolidada TSE / RFB 2018–2024</span>
+                <span>Plataforma de Inteligência e Transparência Eleitoral</span>
+              </div>
+            </footer>
 
           </div>
 

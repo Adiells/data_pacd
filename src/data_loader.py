@@ -14,7 +14,6 @@ from typing import Optional
 import duckdb
 import pandas as pd
 import pyarrow.parquet as pq
-from functools import lru_cache
 
 # Garante que a raiz do projeto esteja no sys.path para importações relativas
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -140,6 +139,8 @@ def obter_dimensao_candidatos(df: Optional[pd.DataFrame] = None) -> pd.DataFrame
 
     if "total_votos" in df.columns:
         agg_dict["total_votos"] = "max"
+    if "is_eleito" in df.columns:
+        agg_dict["is_eleito"] = "max"
 
     cand_dim = (
         df.groupby(chaves_presentes, as_index=False, dropna=False)
@@ -148,7 +149,7 @@ def obter_dimensao_candidatos(df: Optional[pd.DataFrame] = None) -> pd.DataFrame
     )
 
     if "valor_receita" in cand_dim.columns:
-        cand_dim.rename(columns={"valor_receita": "total_receita"}, inplace=True)
+        cand_dim = cand_dim.rename(columns={"valor_receita": "total_receita"})
 
     return cand_dim
 
@@ -258,7 +259,7 @@ def listar_ufs(df: Optional[pd.DataFrame] = None, campo: str = "uf_candidato") -
         .str.strip()
         .str.upper()
     )
-    ufs_unicas = [uf for uf in ufs.unique() if uf and uf not in ["NAN", "NONE", "N/A"]]
+    ufs_unicas = [uf for uf in ufs.unique() if uf and uf not in ["NAN", "NONE", "N/A", "BR"]]
     return sorted(ufs_unicas)
 
 
@@ -285,38 +286,3 @@ def listar_tipos_receita(df: Optional[pd.DataFrame] = None) -> list[str]:
     )
     tipos_unicos = [t for t in tipos.unique() if t]
     return sorted(tipos_unicos)
-
-
-def listar_municipios(
-    df: Optional[pd.DataFrame] = None,
-    uf: Optional[str] = None,
-) -> list[str]:
-    """Retorna a lista de municípios (disponível para eleições municipais 2020/2024).
-
-    Args:
-        df: DataFrame opcional. Se omitido, carrega a base padrão via cache.
-        uf: Sigla da UF opcional para filtrar os municípios.
-
-    Returns:
-        list[str]: Lista ordenada de nomes de municípios.
-    """
-    if df is None:
-        df = carregar_dados()
-
-    if "municipio_candidato" not in df.columns or df["municipio_candidato"].empty:
-        return []
-
-    sub_df = df
-    if uf and "uf_candidato" in df.columns and uf != "Todas":
-        sub_df = df[df["uf_candidato"].astype(str).str.upper() == str(uf).upper()]
-
-    muns = (
-        sub_df["municipio_candidato"]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .str.upper()
-    )
-    muns_unicos = [m for m in muns.unique() if m and m not in ["NAN", "NONE", "N/A"]]
-    return sorted(muns_unicos)
-

@@ -54,9 +54,8 @@ def filtrar_entidades_particulares(df: pd.DataFrame, coluna_nome: str = "nome_do
 def atribuir_status_eleitoral(df_candidatos: pd.DataFrame) -> pd.DataFrame:
     """Normaliza e atribui a situação eleitoral (1 = eleito, 0 = não eleito/suplente).
 
-    Suporta marcação textual de 'ELEITO', 'ELEITO POR QP', 'ELEITO POR MÉDIA'.
-    Caso o dataset traga apenas situação cadastral ('deferido'), infere o resultado
-    pelo ranking de votos e bancadas institucionais do pleito.
+    Prioriza a coluna oficial `is_eleito` da base consolidada; mantém suporte textual
+    em `situacao` apenas como fallback para testes unitários sintéticos.
     """
     if df_candidatos.empty:
         df_res = df_candidatos.copy()
@@ -64,66 +63,15 @@ def atribuir_status_eleitoral(df_candidatos: pd.DataFrame) -> pd.DataFrame:
         return df_res
 
     df_res = df_candidatos.copy()
+    if "is_eleito" in df_res.columns:
+        df_res["eleito"] = df_res["is_eleito"].fillna(False).astype(bool).astype(int)
+        return df_res
+
     sit = df_res["situacao"].fillna("").astype(str).str.upper() if "situacao" in df_res.columns else pd.Series([""] * len(df_res), index=df_res.index)
-    
-    tem_eleito_textual = sit.str.contains(r"\bELEITO\b|ELEITO POR QP|ELEITO POR M[ÉE]DIA|2[º°] TURNO", regex=True).any()
-    
-    if tem_eleito_textual:
-        df_res["eleito"] = (
-            sit.str.contains(r"\bELEITO\b|ELEITO POR QP|ELEITO POR M[ÉE]DIA|2[º°] TURNO", regex=True)
-            & ~sit.str.contains(r"N[ÃA]O\s*ELEITO", regex=True)
-        ).astype(int)
-        return df_res
-
-    # Fallback institucional por ranking de votos quando o dataset contém apenas situação cadastral
-    df_res["eleito"] = 0
-    if "total_votos" not in df_res.columns:
-        return df_res
-
-    vagas_fed = {
-        "SP": 70, "MG": 53, "RJ": 46, "BA": 39, "RS": 31, "PR": 30, "PE": 25, "CE": 22,
-        "MA": 18, "GO": 17, "PA": 17, "PB": 12, "ES": 10, "PI": 10, "AL": 9, "AC": 8,
-        "AM": 8, "AP": 8, "DF": 8, "MS": 8, "MT": 8, "RN": 8, "RO": 8, "RR": 8, "SC": 16,
-        "SE": 8, "TO": 8,
-    }
-
-    campos_agrup = [c for c in ["ano", "cargo", "uf_candidato"] if c in df_res.columns]
-    if not campos_agrup:
-        # Se não houver campos de agrupamento, toma os top 15% mais votados
-        n = len(df_res)
-        v = max(1, int(n * 0.15))
-        top_idx = df_res.sort_values(by="total_votos", ascending=False).head(v).index
-        df_res.loc[top_idx, "eleito"] = 1
-        return df_res
-
-    for _, grp in df_res.groupby(campos_agrup):
-        cargo = str(grp["cargo"].iloc[0]).lower() if "cargo" in grp.columns else ""
-        ano = int(grp["ano"].iloc[0]) if "ano" in grp.columns else 2022
-        uf = str(grp["uf_candidato"].iloc[0]).upper() if "uf_candidato" in grp.columns else "PB"
-        n = len(grp)
-
-        if "governador" in cargo or "presidente" in cargo:
-            vagas = 1
-        elif "prefeito" in cargo:
-            # Em média 40-45% de eleitos se agrupado por estado, ou 1 por município
-            if "municipio_candidato" in grp.columns and grp["municipio_candidato"].nunique() > 1:
-                vagas = max(1, grp["municipio_candidato"].nunique())
-            else:
-                vagas = max(1, int(np.ceil(n * 0.44)))
-        elif "senador" in cargo:
-            vagas = 2 if ano == 2018 else 1
-        elif "deputado federal" in cargo:
-            vagas = vagas_fed.get(uf, 12)
-        elif "deputado estadual" in cargo or "deputado distrital" in cargo:
-            vagas = min(n, vagas_fed.get(uf, 12) * 3)
-        elif "vereador" in cargo:
-            vagas = max(1, int(n * 0.12))
-        else:
-            vagas = max(1, int(n * 0.12))
-
-        top_idx = grp.sort_values(by="total_votos", ascending=False).head(vagas).index
-        df_res.loc[top_idx, "eleito"] = 1
-
+    df_res["eleito"] = (
+        sit.str.contains(r"\bELEITO\b|ELEITO POR QP|ELEITO POR M[ÉE]DIA|2[º°] TURNO", regex=True)
+        & ~sit.str.contains(r"N[ÃA]O\s*ELEITO", regex=True)
+    ).astype(int)
     return df_res
 
 
@@ -191,9 +139,14 @@ def calcular_custo_voto(df: pd.DataFrame) -> pd.DataFrame:
     df_calc[coluna_receita] = pd.to_numeric(df_calc[coluna_receita], errors="coerce").fillna(0.0)
     df_calc["total_votos"] = pd.to_numeric(df_calc["total_votos"], errors="coerce").fillna(0)
 
+    agg_spec: dict[str, str] = {coluna_receita: "sum", "total_votos": "max"}
+    if "is_eleito" in df_calc.columns:
+        df_calc["is_eleito"] = df_calc["is_eleito"].fillna(False).astype(bool)
+        agg_spec["is_eleito"] = "max"
+
     agrupado = (
         df_calc.groupby(colunas_chave, as_index=False, dropna=False)
-        .agg({coluna_receita: "sum", "total_votos": "max"})
+        .agg(agg_spec)
         .rename(columns={coluna_receita: "total_receita"})
     )
 
@@ -523,15 +476,27 @@ def analise_autofinanciamento(df: pd.DataFrame) -> Dict[str, Any]:
     vol_terceiros = float(df_calc.loc[~mask_auto, coluna_receita].sum())
     total_ops = int(mask_auto.sum())
 
-    # Taxa de sucesso comparada (normalizada via atribuir_status_eleitoral)
+    # Taxa de sucesso comparada por candidato (e não por transação)
     taxa_sucesso_auto = 0.0
     taxa_sucesso_terceiros = 0.0
     df_calc = atribuir_status_eleitoral(df_calc)
     if "eleito" in df_calc.columns:
-        if mask_auto.sum() > 0:
-            taxa_sucesso_auto = float(df_calc.loc[mask_auto, "eleito"].mean() * 100.0)
-        if (~mask_auto).sum() > 0:
-            taxa_sucesso_terceiros = float(df_calc.loc[~mask_auto, "eleito"].mean() * 100.0)
+        if "cpf_candidato" in df_calc.columns:
+            cand_cols = [c for c in ["ano", "cpf_candidato"] if c in df_calc.columns]
+            cand_auto = df_calc.groupby(cand_cols, as_index=False).agg(
+                autofinanciamento=("autofinanciamento", "max"),
+                eleito=("eleito", "max"),
+            )
+            m_auto_cand = cand_auto["autofinanciamento"] == 1
+            if m_auto_cand.sum() > 0:
+                taxa_sucesso_auto = float(cand_auto.loc[m_auto_cand, "eleito"].mean() * 100.0)
+            if (~m_auto_cand).sum() > 0:
+                taxa_sucesso_terceiros = float(cand_auto.loc[~m_auto_cand, "eleito"].mean() * 100.0)
+        else:
+            if mask_auto.sum() > 0:
+                taxa_sucesso_auto = float(df_calc.loc[mask_auto, "eleito"].mean() * 100.0)
+            if (~mask_auto).sum() > 0:
+                taxa_sucesso_terceiros = float(df_calc.loc[~mask_auto, "eleito"].mean() * 100.0)
 
     return {
         "taxa_autofinanciamento": taxa_auto,
@@ -594,18 +559,24 @@ def calcular_sucesso_decil(df: pd.DataFrame) -> Dict[str, float]:
     if not coluna_receita:
         return {"taxa_top10": 0.0, "taxa_bottom50": 0.0, "diferenca_sucesso": 0.0}
 
-    # Agrupa por candidato
-    agrup_cols = [c for c in ["cpf_candidato", "nome_candidato", "cargo", "sigla_partido", "situacao", "uf_candidato", "ano"] if c in df.columns]
-    if "total_votos" in df.columns:
-        agrup_cols.append("total_votos")
+    if "total_receita" in df.columns:
+        cand = df.sort_values(by="total_receita", ascending=False).reset_index(drop=True)
+    else:
+        # Agrupa por candidato preservando is_eleito oficial
+        agrup_cols = [c for c in ["cpf_candidato", "nome_candidato", "cargo", "sigla_partido", "situacao", "uf_candidato", "ano"] if c in df.columns]
+        agg_spec: dict[str, str] = {coluna_receita: "sum"}
+        if "total_votos" in df.columns:
+            agg_spec["total_votos"] = "max"
+        if "is_eleito" in df.columns:
+            agg_spec["is_eleito"] = "max"
 
-    cand = (
-        df.groupby(agrup_cols, as_index=False)[coluna_receita]
-        .sum()
-        .rename(columns={coluna_receita: "total_receita"})
-        .sort_values(by="total_receita", ascending=False)
-        .reset_index(drop=True)
-    )
+        cand = (
+            df.groupby(agrup_cols, as_index=False, dropna=False)
+            .agg(agg_spec)
+            .rename(columns={coluna_receita: "total_receita"})
+            .sort_values(by="total_receita", ascending=False)
+            .reset_index(drop=True)
+        )
 
     cand_class = atribuir_status_eleitoral(cand)
     n = len(cand_class)
