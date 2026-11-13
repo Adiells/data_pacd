@@ -1132,8 +1132,11 @@
                       </div>
                       <div className="flex items-center gap-2 mt-1 ml-4">
                         {s.qtd_empresas > 1 && (
-                          <span className="bg-amber-950/80 text-amber-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-800/60" title={`Sócio vinculado a ${s.qtd_empresas} empresas doadoras`}>
-                            {s.qtd_empresas} empresas
+                          <span
+                            className="bg-amber-950/80 text-amber-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-800/60"
+                            title={`Empresas associadas: ${(s.lista_empresas && s.lista_empresas.length > 0) ? s.lista_empresas.join(' • ') : s.qtd_empresas + ' empresas'}`}
+                          >
+                            {s.qtd_empresas} empresas vinculadas
                           </span>
                         )}
                         {s.volume_para_eleitos > 0 ? (
@@ -1157,6 +1160,11 @@
                       <div className="text-xs text-gray-400 truncate mt-0.5" title={s.setor}>
                         {s.setor}
                       </div>
+                      {s.qtd_empresas > 1 && s.lista_empresas && s.lista_empresas.filter(emp => emp !== s.empresa).length > 0 && (
+                        <div className="text-[11px] text-amber-400/90 truncate mt-0.5 font-medium" title={`Todas as empresas associadas: ${s.lista_empresas.join(' • ')}`}>
+                          + {s.qtd_empresas - 1} outra(s): {s.lista_empresas.filter(emp => emp !== s.empresa).join(', ')}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {s.principal_candidato ? (
@@ -1459,6 +1467,11 @@
                           
                           {/* Badges do Candidato */}
                           <div className="flex flex-wrap gap-2 mb-3">
+                            {cand.ano && (
+                              <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-xs font-bold uppercase text-gray-300 shadow-sm">
+                                <span className="text-gray-500 mr-1">Ano:</span>{cand.ano}
+                              </span>
+                            )}
                             <span className="bg-gray-800 px-2.5 py-1 rounded-md border border-gray-600 text-xs font-bold uppercase text-gray-300 shadow-sm">
                               <span className="text-gray-500 mr-1">Partido:</span>{cand.partido}
                             </span>
@@ -1473,30 +1486,36 @@
                           <div className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">
                             Principais Doadores ({cand.doadores.length} origens)
                           </div>
-                          <table className="w-full text-xs text-gray-300">
-                            <tbody className="divide-y divide-gray-800/50">
-                              {cand.doadores.slice(0, 50).map((d, i) => (
-                                <tr key={i} className="hover:bg-gray-800/40 transition-colors">
-                                  <td className="py-2.5">
-                                    <div className="flex items-center justify-between gap-2 min-w-0" title={d.doador}>
-                                      <span className="truncate font-medium text-slate-200">{d.doador}</span>
-                                      <span className="shrink-0 bg-slate-800 text-amber-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-slate-700" title={`UF do Doador: ${d.uf && d.uf !== '-' ? d.uf : 'Não informada no TSE'}`}>
-                                        {d.uf && d.uf !== '-' ? d.uf : 'N/I'}
-                                      </span>
-                                    </div>
-                                  </td>
-                                  <td className="py-2.5 text-right text-blue-400 font-semibold font-mono">{formatMoeda(d.valor)}</td>
-                                </tr>
-                              ))}
-                              {cand.doadores.length > 50 && (
-                                <tr className="bg-[#0f172a]/40">
-                                  <td colSpan="2" className="py-3 text-center text-xs text-gray-500 font-medium italic border-t border-gray-800/50">
-                                    ... e mais {formatNumero(cand.doadores.length - 50)} origens menores ocultadas.
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
+                          {cand.doadores.length === 0 ? (
+                            <div className="py-4 px-3 text-center bg-gray-900/60 rounded border border-gray-800 text-xs text-gray-400">
+                              Nenhuma receita financeira positiva registrada para esta candidatura (Declaração sem movimentação financeira / R$ 0,00).
+                            </div>
+                          ) : (
+                            <table className="w-full text-xs text-gray-300">
+                              <tbody className="divide-y divide-gray-800/50">
+                                {cand.doadores.slice(0, 50).map((d, i) => (
+                                  <tr key={i} className="hover:bg-gray-800/40 transition-colors">
+                                    <td className="py-2.5">
+                                      <div className="flex items-center justify-between gap-2 min-w-0" title={d.doador}>
+                                        <span className="truncate font-medium text-slate-200">{d.doador}</span>
+                                        <span className="shrink-0 bg-slate-800 text-amber-300 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-slate-700" title={`UF do Doador: ${d.uf && d.uf !== '-' ? d.uf : 'Não informada no TSE'}`}>
+                                          {d.uf && d.uf !== '-' ? d.uf : 'N/I'}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="py-2.5 text-right text-blue-400 font-semibold font-mono">{formatMoeda(d.valor)}</td>
+                                  </tr>
+                                ))}
+                                {cand.doadores.length > 50 && (
+                                  <tr className="bg-[#0f172a]/40">
+                                    <td colSpan="2" className="py-3 text-center text-xs text-gray-500 font-medium italic border-t border-gray-800/50">
+                                      ... e mais {formatNumero(cand.doadores.length - 50)} origens menores ocultadas.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1523,6 +1542,7 @@
 
       // Seção Ativa (Mostrar 1 por vez)
       const [activeTab, setActiveTab] = useState("visao-geral");
+      const [subTabTeia, setSubTabTeia] = useState("setores"); // 'setores' | 'empresas' | 'socios' | 'todas'
 
       // Resolução de Estado Único para controle de abas e gráficos territoriais
       const ufsValidas = Array.isArray(uf) 
@@ -2051,18 +2071,33 @@
                     <span className="text-xs uppercase tracking-wider text-purple-300 font-semibold block flex justify-between items-center">
                       <span>Poder Econômico: Vitória</span>
                     </span>
-                    <div className="flex items-baseline space-x-1.5 mt-1">
-                      <span className="text-2xl font-bold text-purple-400">
-                        {((dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0) > 0 
-                          ? ((dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0) / (dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 1)).toFixed(1) 
-                          : ((dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0) > 0 ? '>10' : '1.0'))}x
-                      </span>
-                      <span className="text-xs text-gray-300 font-medium">mais chances para os mais ricos</span>
-                    </div>
-                    <div className="text-[11px] text-gray-400 mt-1.5 flex justify-between border-t border-gray-700/60 pt-1.5">
-                      <span>Top 10%: <strong className="text-emerald-400 font-mono">{(dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0).toFixed(1)}%</strong></span>
-                      <span>Base 50%: <strong className="text-slate-400 font-mono">{(dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0).toFixed(1)}%</strong></span>
-                    </div>
+                    {((dynamicData.kpis?.total_eleitos === 0) || ((dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0) === 0 && (dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0) === 0)) ? (
+                      <>
+                        <div className="flex items-baseline space-x-1.5 mt-1">
+                          <span className="text-xl font-bold text-gray-400">Sem Eleitos</span>
+                          <span className="text-xs text-gray-400 font-medium">neste recorte filtrado</span>
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-1.5 flex justify-between border-t border-gray-700/60 pt-1.5">
+                          <span>Mandatos eleitos: <strong className="text-gray-400 font-mono">0</strong></span>
+                          <span>Candidaturas: <strong className="text-slate-400 font-mono">{formatNumero(dynamicData.kpis?.num_candidatos || 0)}</strong></span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-baseline space-x-1.5 mt-1">
+                          <span className="text-2xl font-bold text-purple-400">
+                            {((dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0) > 0 
+                              ? ((dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0) / (dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 1)).toFixed(1) 
+                              : ((dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0) > 0 ? '>10' : '1.0'))}x
+                          </span>
+                          <span className="text-xs text-gray-300 font-medium">mais chances para os mais ricos</span>
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-1.5 flex justify-between border-t border-gray-700/60 pt-1.5">
+                          <span>Top 10%: <strong className="text-emerald-400 font-mono">{(dynamicData.kpis?.taxa_sucesso_decil?.taxa_top10 || 0).toFixed(1)}%</strong></span>
+                          <span>Base 50%: <strong className="text-slate-400 font-mono">{(dynamicData.kpis?.taxa_sucesso_decil?.taxa_bottom50 || 0).toFixed(1)}%</strong></span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -2091,58 +2126,68 @@
                   </div>
                 </div>
 
-                {/* LINHA 2: Rankings Categóricos Horizontais (Partidos & Estados) */}
-                <div className={`grid gap-6 ${(isEstadoUnico || cargo === 'PRESIDENTE' || cargo === 'DEPUTADO DISTRITAL') ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}>
-                  {/* Ranking de Partidos no Recorte / Distribuição por Cargo se Partido Único */}
-                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
-                      {dynamicData.is_partido_unico 
-                        ? `Distribuição por Cargo (${dynamicData.partido_selecionado})`
-                        : cargo === 'PRESIDENTE'
-                          ? 'Ranking de Partidos no Recorte (Presidência da República)'
-                          : isEstadoUnico 
-                            ? `Ranking de Partidos no Recorte (${ufsValidas[0]})`
-                            : 'Ranking de Partidos no Recorte'}
-                    </h3>
-                    <ChartCanvas
-                      type="bar"
-                      id="chart-vg-partidos"
-                      data={{
-                        labels: (dynamicData.top_10_partidos || []).map(d => d.partido),
-                        datasets: [{
-                          label: 'Volume Total (R$)',
-                          data: (dynamicData.top_10_partidos || []).map(d => d.total),
-                          backgroundColor: '#10b981',
-                          borderRadius: 4,
-                        }]
-                      }}
-                      options={{ indexAxis: 'y' }}
-                    />
-                  </div>
+                {/* LINHA 2: Rankings Categóricos Horizontais (Partidos/Cargos/UFs & Estados) */}
+                {(() => {
+                  const ocultarCardPartido = dynamicData.modo_grafico_partidos === 'oculto' || (dynamicData.top_10_partidos || []).length === 0;
+                  const ocultarCardEstados = isEstadoUnico || cargo === 'PRESIDENTE' || cargo === 'DEPUTADO DISTRITAL' || (dynamicData.ranking_estados || []).length === 0;
+                  if (ocultarCardPartido && ocultarCardEstados) return null;
+                  const colsClass = (!ocultarCardPartido && !ocultarCardEstados) ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1';
+                  return (
+                    <div className={`grid gap-6 ${colsClass}`}>
+                      {!ocultarCardPartido && (
+                        <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                          <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                            {dynamicData.modo_grafico_partidos === 'ufs_do_partido_cargo'
+                              ? `Distribuição por Estado das Candidaturas (${dynamicData.partido_selecionado} — ${dynamicData.cargo_selecionado})`
+                              : (dynamicData.modo_grafico_partidos === 'cargos_do_partido' || dynamicData.is_partido_unico)
+                                ? `Distribuição por Cargo (${dynamicData.partido_selecionado})`
+                                : cargo === 'PRESIDENTE'
+                                  ? 'Ranking de Partidos no Recorte (Presidência da República)'
+                                  : isEstadoUnico 
+                                    ? `Ranking de Partidos no Recorte (${ufsValidas[0]})`
+                                    : 'Ranking de Partidos no Recorte'}
+                          </h3>
+                          <ChartCanvas
+                            type="bar"
+                            id="chart-vg-partidos"
+                            data={{
+                              labels: (dynamicData.top_10_partidos || []).map(d => d.partido),
+                              datasets: [{
+                                label: 'Volume Total (R$)',
+                                data: (dynamicData.top_10_partidos || []).map(d => d.total),
+                                backgroundColor: '#10b981',
+                                borderRadius: 4,
+                              }]
+                            }}
+                            options={{ indexAxis: 'y' }}
+                          />
+                        </div>
+                      )}
 
-                  {/* Ranking Federativo (Top Estados no Recorte) - Oculto se Estado Único, Presidente ou Deputado Distrital */}
-                  {!(isEstadoUnico || cargo === 'PRESIDENTE' || cargo === 'DEPUTADO DISTRITAL') && (
-                    <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
-                      <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
-                        Ranking Federativo (Top Estados no Recorte)
-                      </h3>
-                      <ChartCanvas
-                        type="bar"
-                        id="chart-vg-ranking-estados"
-                        data={{
-                          labels: (dynamicData.ranking_estados || []).map(d => d.uf),
-                          datasets: [{
-                            label: 'Volume Total (R$)',
-                            data: (dynamicData.ranking_estados || []).map(d => d.total),
-                            backgroundColor: '#3b82f6',
-                            borderRadius: 4,
-                          }]
-                        }}
-                        options={{ indexAxis: 'y' }}
-                      />
+                      {!ocultarCardEstados && (
+                        <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                          <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                            Ranking Federativo (Top Estados no Recorte)
+                          </h3>
+                          <ChartCanvas
+                            type="bar"
+                            id="chart-vg-ranking-estados"
+                            data={{
+                              labels: (dynamicData.ranking_estados || []).map(d => d.uf),
+                              datasets: [{
+                                label: 'Volume Total (R$)',
+                                data: (dynamicData.ranking_estados || []).map(d => d.total),
+                                backgroundColor: '#3b82f6',
+                                borderRadius: 4,
+                              }]
+                            }}
+                            options={{ indexAxis: 'y' }}
+                          />
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* LINHA 3: Gráficos de Barra Verticais (Distribuição Logarítmica & Detalhamento/Composição) */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2175,34 +2220,61 @@
                           Com Apoio da Elite vs Sem Apoio
                         </span>
                       </div>
-                      <ChartCanvas
-                        type="bar"
-                        id="chart-vg-assertividade-elite"
-                        data={{
-                          labels: (dynamicData.assertividade_elite || []).map(d => d.status),
-                          datasets: [{
-                            label: 'Taxa de Vitória (%)',
-                            data: (dynamicData.assertividade_elite || []).map(d => d.taxa_sucesso || 0),
-                            backgroundColor: (dynamicData.assertividade_elite || []).map(d => 
-                              d.status.includes('Com Apoio') ? '#10b981' : '#64748b'
-                            ),
-                            borderRadius: 4,
-                          }]
-                        }}
-                        options={{
-                          indexAxis: 'y',
-                          scales: {
-                            x: {
-                              ticks: { callback: (val) => val + '%', color: '#9ca3af' },
-                              grid: { color: '#1f2937' },
-                              max: 100
-                            }
-                          },
-                          plugins: {
-                            legend: { display: false }
-                          }
-                        }}
-                      />
+                      {(() => {
+                        const arrElite = dynamicData.assertividade_elite || [];
+                        const totalEleitosElite = arrElite.reduce((acc, d) => acc + (d.eleitos || 0), 0);
+                        if (totalEleitosElite === 0) {
+                          const comApoio = arrElite.find(d => String(d.status || '').includes('Com Apoio'));
+                          const semApoio = arrElite.find(d => String(d.status || '').includes('Sem Apoio'));
+                          return (
+                            <div className="h-[320px] flex flex-col items-center justify-center text-center p-6 bg-gray-900/40 rounded-lg border border-gray-800/80">
+                              <span className="text-xs font-mono uppercase tracking-wider text-amber-300 bg-amber-950/60 px-3 py-1 rounded border border-amber-800/60 mb-3">
+                                0 Candidatos Eleitos no Recorte
+                              </span>
+                              <p className="text-sm text-gray-300 font-medium max-w-md">
+                                Nenhuma candidatura conquistou mandato para os filtros selecionados.
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1.5 max-w-md">
+                                A comparação de taxa de vitória (Com Apoio vs. Sem Apoio da Elite) requer ao menos 1 candidato eleito no universo analisado (Taxa de sucesso geral: 0,0%).
+                              </p>
+                              <div className="flex gap-4 mt-4 text-xs text-gray-400 font-mono">
+                                <span>Com Apoio: <strong className="text-emerald-400">{formatNumero(comApoio?.total_candidatos || 0)}</strong> cand.</span>
+                                <span>Sem Apoio: <strong className="text-slate-300">{formatNumero(semApoio?.total_candidatos || 0)}</strong> cand.</span>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <ChartCanvas
+                            type="bar"
+                            id="chart-vg-assertividade-elite"
+                            data={{
+                              labels: arrElite.map(d => d.status),
+                              datasets: [{
+                                label: 'Taxa de Vitória (%)',
+                                data: arrElite.map(d => d.taxa_sucesso || 0),
+                                backgroundColor: arrElite.map(d => 
+                                  d.status.includes('Com Apoio') ? '#10b981' : '#64748b'
+                                ),
+                                borderRadius: 4,
+                              }]
+                            }}
+                            options={{
+                              indexAxis: 'y',
+                              scales: {
+                                x: {
+                                  ticks: { callback: (val) => val + '%', color: '#9ca3af' },
+                                  grid: { color: '#1f2937' },
+                                  max: 100
+                                }
+                              },
+                              plugins: {
+                                legend: { display: false }
+                              }
+                            }}
+                          />
+                        );
+                      })()}
                     </div>
                   ) : (
                     <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
@@ -2400,6 +2472,7 @@
                                   y: p.total_receita,
                                   nome: p.nome_candidato,
                                   partido: p.partido,
+                                  ano: p.ano,
                                   custo: p.custo_voto
                                 })),
                                 backgroundColor: '#10b981',
@@ -2413,6 +2486,7 @@
                                   y: p.total_receita,
                                   nome: p.nome_candidato,
                                   partido: p.partido,
+                                  ano: p.ano,
                                   custo: p.custo_voto
                                 })),
                                 backgroundColor: '#ef4444',
@@ -2442,7 +2516,8 @@
                                 callbacks: {
                                 label: function(context) {
                                     const raw = context.raw;
-                                    return `${raw.nome} (${raw.partido}): ${formatMoeda(raw.y)} | ${formatNumero(raw.x)} votos (${formatMoeda(raw.custo)}/voto)`;
+                                    const anoTag = raw.ano ? ` - ${raw.ano}` : '';
+                                    return `${raw.nome} (${raw.partido}${anoTag}): ${formatMoeda(raw.y)} | ${formatNumero(raw.x)} votos (${formatMoeda(raw.custo)}/voto)`;
                                   }
                                 }
                               }
@@ -2480,64 +2555,180 @@
                   </div>
                   <div className="bg-[#1f2937]/70 border border-gray-700/60 p-4 rounded-lg">
                     <span className="text-xs uppercase tracking-wider text-gray-400 font-semibold block">Taxa de Vitória com Apoio da Elite</span>
-                    <span className="text-2xl font-bold text-amber-400 mt-1 block">{dynamicData.kpis.sucesso_com_empresario.toFixed(1)}%</span>
-                    <span className="text-xs text-gray-400 mt-0.5 block">vs. {dynamicData.kpis.sucesso_sem_empresario.toFixed(1)}% sem apoio empresarial</span>
+                    {(dynamicData.kpis.total_eleitos_recorte === 0 || (dynamicData.kpis.sucesso_com_empresario === 0 && dynamicData.kpis.sucesso_sem_empresario === 0)) ? (
+                      <>
+                        <span className="text-xl font-bold text-gray-400 mt-1 block">Sem Eleitos (0,0%)</span>
+                        <span className="text-xs text-gray-500 mt-0.5 block">Nenhum candidato eleito neste recorte</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-2xl font-bold text-amber-400 mt-1 block">{dynamicData.kpis.sucesso_com_empresario.toFixed(1)}%</span>
+                        <span className="text-xs text-gray-400 mt-0.5 block">vs. {dynamicData.kpis.sucesso_sem_empresario.toFixed(1)}% sem apoio empresarial</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {/* Linha 1: Ranking de Setores Econômicos (CNAE) - Largura Total */}
-                <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
-                    <div>
-                      <h3 className="text-base font-bold text-white tracking-wide">
-                        Ranking de Setores Econômicos Campeões em Financiamento (CNAE / IBGE)
-                      </h3>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Distribuição do financiamento da elite empresarial agrupado pela atividade econômica principal das empresas vinculadas.
-                      </p>
-                    </div>
-                    <span className="text-xs text-emerald-400 font-mono bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-800/60 shrink-0">
-                      Clique na linha para ver os maiores aportes
-                    </span>
+                {/* Linha de Síntese Visual: Top 5 Setores & Top 5 Grupos Empresariais */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                      Top 5 Setores Econômicos em Volume (CNAE)
+                    </h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-teia-top-setores"
+                      data={{
+                        labels: (dynamicData.top_setores || []).slice(0, 5).map(d => String(d.setor || '').length > 34 ? String(d.setor).slice(0, 32) + '…' : d.setor),
+                        datasets: [{
+                          label: 'Volume Aportado (R$)',
+                          data: (dynamicData.top_setores || []).slice(0, 5).map(d => d.total),
+                          backgroundColor: '#10b981',
+                          borderRadius: 4,
+                        }]
+                      }}
+                      options={{ indexAxis: 'y' }}
+                    />
                   </div>
-                  <TabelaTopSetoresExpandivel setores={dynamicData.top_setores || []} />
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-4 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 tracking-wide">
+                      Top 5 Grupos Empresariais em Volume
+                    </h3>
+                    <ChartCanvas
+                      type="bar"
+                      id="chart-teia-top-empresas"
+                      data={{
+                        labels: (dynamicData.top_empresas || []).slice(0, 5).map(d => String(d.empresa || '').length > 34 ? String(d.empresa).slice(0, 32) + '…' : d.empresa),
+                        datasets: [{
+                          label: 'Volume Aportado (R$)',
+                          data: (dynamicData.top_empresas || []).slice(0, 5).map(d => d.total),
+                          backgroundColor: '#3b82f6',
+                          borderRadius: 4,
+                        }]
+                      }}
+                      options={{ indexAxis: 'y' }}
+                    />
+                  </div>
                 </div>
 
-                {/* Linha 2: Ranking de Grupos Empresariais (Razão Social dos Sócios Doadores) - Largura Total */}
-                <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
-                    <div>
-                      <h3 className="text-base font-bold text-white tracking-wide">
-                        Ranking de Grupos Empresariais (Razão Social dos Sócios Doadores)
-                      </h3>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Empresas ativas cujos sócios e administradores mais injetaram recursos nas eleições mapeadas no recorte.
-                      </p>
-                    </div>
-                    <span className="text-xs text-blue-400 font-mono bg-blue-950/60 px-2.5 py-1 rounded border border-blue-800/60 shrink-0">
-                      Top 10 Grupos Corporativos
-                    </span>
+                {/* Barra de Sub-Navegação (Segmented Control Interno) */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-[#111827] border border-gray-800 p-2 rounded-lg">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSubTabTeia('setores')}
+                      className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all flex items-center gap-2 ${
+                        subTabTeia === 'setores'
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'bg-[#1f2937]/70 text-gray-300 hover:bg-gray-800'
+                      }`}
+                    >
+                      <span>Setores Econômicos (CNAE)</span>
+                      <span className="px-1.5 py-0.5 rounded bg-black/30 font-mono text-[10px]">
+                        {(dynamicData.top_setores || []).length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubTabTeia('empresas')}
+                      className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all flex items-center gap-2 ${
+                        subTabTeia === 'empresas'
+                          ? 'bg-blue-600 text-white shadow'
+                          : 'bg-[#1f2937]/70 text-gray-300 hover:bg-gray-800'
+                      }`}
+                    >
+                      <span>Grupos Empresariais (CNPJ)</span>
+                      <span className="px-1.5 py-0.5 rounded bg-black/30 font-mono text-[10px]">
+                        {(dynamicData.top_empresas || []).length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubTabTeia('socios')}
+                      className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all flex items-center gap-2 ${
+                        subTabTeia === 'socios'
+                          ? 'bg-amber-600 text-white shadow'
+                          : 'bg-[#1f2937]/70 text-gray-300 hover:bg-gray-800'
+                      }`}
+                    >
+                      <span>Maiores Financiadores (Sócios QSA)</span>
+                      <span className="px-1.5 py-0.5 rounded bg-black/30 font-mono text-[10px]">
+                        {(dynamicData.maiores_socios || []).length}
+                      </span>
+                    </button>
                   </div>
-                  <TabelaTopGruposEmpresariais empresas={dynamicData.top_empresas || []} />
+                  <button
+                    type="button"
+                    onClick={() => setSubTabTeia('todas')}
+                    className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${
+                      subTabTeia === 'todas'
+                        ? 'bg-purple-600 text-white shadow'
+                        : 'bg-gray-800/80 text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                    }`}
+                  >
+                    Ver Todas Juntas
+                  </button>
                 </div>
 
-                {/* Linha 3: Os Maiores Financiadores da Elite Corporativa no Recorte - Largura Total Sem Cortes */}
-                <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
-                    <div>
-                      <h3 className="text-base font-bold text-white tracking-wide">
-                        Os Maiores Financiadores da Elite Corporativa no Recorte
-                      </h3>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Sócios e dirigentes empresariais individuais que lideram o volume de doações privadas no cenário selecionado.
-                      </p>
+                {/* Tabela 1: Ranking de Setores Econômicos (CNAE) */}
+                {(subTabTeia === 'setores' || subTabTeia === 'todas') && (
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
+                      <div>
+                        <h3 className="text-base font-bold text-white tracking-wide">
+                          Ranking de Setores Econômicos Campeões em Financiamento (CNAE / IBGE)
+                        </h3>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Distribuição do financiamento da elite empresarial agrupado pela atividade econômica principal das empresas vinculadas.
+                        </p>
+                      </div>
+                      <span className="text-xs text-emerald-400 font-mono bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-800/60 shrink-0">
+                        Clique na linha para ver os maiores aportes
+                      </span>
                     </div>
-                    <span className="text-xs text-amber-400 font-mono bg-amber-950/60 px-2.5 py-1 rounded border border-amber-800/60 shrink-0">
-                      Auditoria Individual QSA / RFB
-                    </span>
+                    <TabelaTopSetoresExpandivel setores={dynamicData.top_setores || []} />
                   </div>
-                  <TabelaMaioresSociosElite socios={dynamicData.maiores_socios || []} />
-                </div>
+                )}
+
+                {/* Tabela 2: Ranking de Grupos Empresariais (Razão Social dos Sócios Doadores) */}
+                {(subTabTeia === 'empresas' || subTabTeia === 'todas') && (
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
+                      <div>
+                        <h3 className="text-base font-bold text-white tracking-wide">
+                          Ranking de Grupos Empresariais (Razão Social dos Sócios Doadores)
+                        </h3>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Empresas ativas cujos sócios e administradores mais injetaram recursos nas eleições mapeadas no recorte.
+                        </p>
+                      </div>
+                      <span className="text-xs text-blue-400 font-mono bg-blue-950/60 px-2.5 py-1 rounded border border-blue-800/60 shrink-0">
+                        Top 10 Grupos Corporativos
+                      </span>
+                    </div>
+                    <TabelaTopGruposEmpresariais empresas={dynamicData.top_empresas || []} />
+                  </div>
+                )}
+
+                {/* Tabela 3: Os Maiores Financiadores da Elite Corporativa no Recorte */}
+                {(subTabTeia === 'socios' || subTabTeia === 'todas') && (
+                  <div className="bg-[#1f2937]/50 border border-gray-800 p-5 rounded-lg space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-gray-800 gap-2">
+                      <div>
+                        <h3 className="text-base font-bold text-white tracking-wide">
+                          Os Maiores Financiadores da Elite Corporativa no Recorte
+                        </h3>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Sócios e dirigentes empresariais individuais que lideram o volume de doações privadas no cenário selecionado.
+                        </p>
+                      </div>
+                      <span className="text-xs text-amber-400 font-mono bg-amber-950/60 px-2.5 py-1 rounded border border-amber-800/60 shrink-0">
+                        Auditoria Individual QSA / RFB
+                      </span>
+                    </div>
+                    <TabelaMaioresSociosElite socios={dynamicData.maiores_socios || []} />
+                  </div>
+                )}
 
               </div>
             )}

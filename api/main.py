@@ -110,9 +110,9 @@ conn.execute("""
     SELECT 
         nome_doador,
         COALESCE(
-            MAX(NULLIF(uf_empresa, 'BR')),
-            MAX(NULLIF(sigla_uf_doador, 'BR')),
-            MODE(CASE WHEN uf_candidato != 'BR' THEN uf_candidato END)
+            MAX(NULLIF(NULLIF(TRIM(uf_empresa), ''), 'BR')),
+            MAX(NULLIF(NULLIF(NULLIF(TRIM(sigla_uf_doador), ''), 'BR'), '-')),
+            MODE(CASE WHEN uf_candidato IS NOT NULL AND TRIM(uf_candidato) NOT IN ('', 'BR', '-') THEN uf_candidato END)
         ) as uf_origem
     FROM eleicoes
     WHERE nome_doador IS NOT NULL AND TRIM(nome_doador) != ''
@@ -308,7 +308,7 @@ def get_global_metrics(
         SELECT
             COALESCE(SUM(valor_receita), 0.0) as volume_total,
             COUNT(DISTINCT sequencial_candidato) as total_candidatos,
-            COUNT(DISTINCT cpf_cnpj_doador) as total_doadores,
+            COUNT(DISTINCT CASE WHEN valor_receita > 0 AND cpf_cnpj_doador IS NOT NULL AND TRIM(cpf_cnpj_doador) != '' THEN cpf_cnpj_doador END) as total_doadores,
             COUNT(*) as total_transacoes
         FROM eleicoes
         {where_extra}
@@ -320,14 +320,22 @@ def get_global_metrics(
     sql_doadores = f"""
         WITH Ranking AS (
             SELECT
-                cpf_cnpj_doador,
-                MAX(COALESCE(nome_doador, 'NÃO INFORMADO')) as nome_doador,
-                COALESCE(MAX(NULLIF(TRIM(sigla_uf_doador), '')), '-') as uf_doador,
-                SUM(valor_receita) as total_doador
-            FROM eleicoes
-            {where_extra} {'AND' if where_extra else 'WHERE'} cpf_cnpj_doador IS NOT NULL AND TRIM(cpf_cnpj_doador) != ''
-            AND NOT regexp_matches(UPPER(COALESCE(nome_doador, '')), '{REGEX_CROWD}')
-            GROUP BY cpf_cnpj_doador
+                e.cpf_cnpj_doador,
+                MAX(COALESCE(e.nome_doador, 'NÃO INFORMADO')) as nome_doador,
+                COALESCE(
+                    MAX(NULLIF(NULLIF(TRIM(e.uf_empresa), ''), 'BR')),
+                    MAX(s.uf_origem),
+                    MAX(NULLIF(NULLIF(NULLIF(TRIM(e.sigla_uf_doador), ''), 'BR'), '-')),
+                    MAX(NULLIF(NULLIF(TRIM(e.uf_candidato), ''), 'BR')),
+                    '-'
+                ) as uf_doador,
+                SUM(e.valor_receita) as total_doador
+            FROM eleicoes e
+            LEFT JOIN sede_doadores s ON e.nome_doador = s.nome_doador
+            {where_extra_e} {'AND' if where_extra_e else 'WHERE'} e.cpf_cnpj_doador IS NOT NULL AND TRIM(e.cpf_cnpj_doador) != ''
+            AND e.valor_receita > 0
+            AND NOT regexp_matches(UPPER(COALESCE(e.nome_doador, '')), '{REGEX_CROWD}')
+            GROUP BY e.cpf_cnpj_doador
             ORDER BY total_doador DESC
             LIMIT 10
         ),
@@ -345,7 +353,7 @@ def get_global_metrics(
                 ROW_NUMBER() OVER (PARTITION BY r.cpf_cnpj_doador ORDER BY SUM(e.valor_receita) DESC) as rn
             FROM eleicoes e
             JOIN Ranking r ON e.cpf_cnpj_doador = r.cpf_cnpj_doador
-            {where_extra_e}
+            {where_extra_e} {'AND' if where_extra_e else 'WHERE'} e.valor_receita > 0
             GROUP BY r.cpf_cnpj_doador, r.nome_doador, r.uf_doador, r.total_doador, e.nome_candidato, e.sigla_partido, e.cargo, COALESCE(NULLIF(TRIM(e.uf_candidato), ''), 'BR')
         )
         SELECT * FROM DestinatariosAgg
@@ -375,20 +383,20 @@ def get_global_metrics(
             ]
             top_doadores.append({"nome": nome, "uf": uf_d, "total": float(total), "destinatarios": destinatarios})
 
-    # 2. TOP 10 CANDIDATOS (Otimizado via Window Function no DuckDB)
+    # 2. TOP 10 CANDIDATOS (Otimizado via Window Function no DuckDB com Blindagem de Candidatura)
     sql_candidatos = f"""
         WITH Ranking AS (
             SELECT
                 ano,
                 cpf_candidato,
+                cargo,
                 MAX(nome_candidato) as nome_candidato,
                 MAX(sigla_partido) as sigla_partido,
-                MAX(cargo) as cargo,
                 COALESCE(NULLIF(TRIM(MAX(uf_candidato)), ''), 'BR') as uf_candidato,
                 SUM(valor_receita) as total_candidato
             FROM eleicoes
             {where_extra} {'AND' if where_extra else 'WHERE'} cpf_candidato IS NOT NULL AND TRIM(cpf_candidato) != ''
-            GROUP BY ano, cpf_candidato
+            GROUP BY ano, cpf_candidato, cargo
             ORDER BY total_candidato DESC
             LIMIT 10
         ),
@@ -406,12 +414,19 @@ def get_global_metrics(
                     THEN COALESCE(MAX(e.nome_doador), '') || ' (PLATAFORMA DE CROWDFUNDING)'
                     ELSE COALESCE(MAX(e.nome_doador), 'NÃO INFORMADO')
                 END as nome_doador,
-                COALESCE(NULLIF(TRIM(MAX(e.sigla_uf_doador)), ''), '-') as uf_doador,
+                COALESCE(
+                    MAX(NULLIF(NULLIF(TRIM(e.uf_empresa), ''), 'BR')),
+                    MAX(s.uf_origem),
+                    MAX(NULLIF(NULLIF(NULLIF(TRIM(e.sigla_uf_doador), ''), 'BR'), '-')),
+                    MAX(NULLIF(NULLIF(TRIM(e.uf_candidato), ''), 'BR')),
+                    '-'
+                ) as uf_doador,
                 SUM(e.valor_receita) as valor_doado,
-                ROW_NUMBER() OVER (PARTITION BY r.ano, r.cpf_candidato ORDER BY SUM(e.valor_receita) DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY r.ano, r.cpf_candidato, r.cargo ORDER BY SUM(e.valor_receita) DESC) as rn
             FROM eleicoes e
-            JOIN Ranking r ON e.ano = r.ano AND e.cpf_candidato = r.cpf_candidato
-            {where_extra_e}
+            JOIN Ranking r ON e.ano = r.ano AND e.cpf_candidato = r.cpf_candidato AND e.cargo = r.cargo
+            LEFT JOIN sede_doadores s ON e.nome_doador = s.nome_doador
+            {where_extra_e} {'AND' if where_extra_e else 'WHERE'} e.valor_receita > 0
             GROUP BY r.ano, r.cpf_candidato, r.nome_candidato, r.sigla_partido, r.cargo, r.uf_candidato, r.total_candidato, e.cpf_cnpj_doador
         )
         SELECT * FROM DoadoresAgg
@@ -422,7 +437,7 @@ def get_global_metrics(
 
     top_candidatos = []
     if not df_candidatos_bruto.empty:
-        for (_, _, nome, partido, cargo, uf, total), group in df_candidatos_bruto.groupby(
+        for (ano_c, _, nome, partido, cargo, uf, total), group in df_candidatos_bruto.groupby(
             ["ano", "cpf_candidato", "nome_candidato", "sigla_partido", "cargo", "uf_candidato", "total_candidato"],
             sort=False,
         ):
@@ -433,9 +448,10 @@ def get_global_metrics(
                     group["uf_doador"],
                     group["valor_doado"],
                 )
+                if float(d_val or 0.0) > 0.0
             ]
             top_candidatos.append(
-                {"nome": nome, "partido": partido, "cargo": cargo, "uf": uf, "total": float(total), "doadores": doadores}
+                {"ano": int(ano_c), "nome": nome, "partido": partido, "cargo": cargo, "uf": uf, "total": float(total), "doadores": doadores}
             )
 
     # 3. Distribuição do Volume Arrecadado (Escala Logarítmica)
@@ -443,7 +459,7 @@ def get_global_metrics(
         SELECT SUM(valor_receita) as total
         FROM eleicoes
         {where_extra}
-        GROUP BY ano, cpf_candidato
+        GROUP BY ano, cpf_candidato, cargo
         HAVING SUM(valor_receita) > 0
     """)
     receitas_cand = df_receitas["total"].values if not df_receitas.empty else np.array([])
@@ -551,13 +567,13 @@ def get_visao_geral(
         ano=ano, cargo=cargo, uf=uf, partido=partido, modo_recurso=modo, alias="e"
     )
 
-    # 0. KPIs diretos no DuckDB
+    # 0. KPIs diretos no DuckDB (com Blindagem de Candidatura e Doadores Efetivos > 0)
     row_kpis = query_fetchone(
         f"""
         SELECT
             COALESCE(SUM(valor_receita), 0.0) as total_arrecadado,
-            COUNT(DISTINCT cpf_candidato) as num_candidatos,
-            COUNT(DISTINCT cpf_cnpj_doador) as num_doadores,
+            COUNT(DISTINCT (CAST(ano AS VARCHAR) || '_' || cpf_candidato || '_' || COALESCE(cargo, ''))) as num_candidatos,
+            COUNT(DISTINCT CASE WHEN valor_receita > 0 AND cpf_cnpj_doador IS NOT NULL AND TRIM(cpf_cnpj_doador) != '' THEN cpf_cnpj_doador END) as num_doadores,
             COUNT(*) as num_transacoes
         FROM eleicoes
         {where}
@@ -571,47 +587,67 @@ def get_visao_geral(
                 "total_arrecadado": 0.0,
                 "num_candidatos": 0,
                 "num_doadores": 0,
+                "total_eleitos": 0,
                 "taxa_sucesso_decil": {"taxa_top10": 0.0, "taxa_bottom50": 0.0, "diferenca_sucesso": 0.0},
             },
             "top_10_doadores": [],
             "top_10_candidatos": [],
             "distribuicao_log": [],
+            "top_10_partidos": [],
+            "is_partido_unico": False,
+            "partido_selecionado": None,
+            "cargo_selecionado": None,
+            "modo_grafico_partidos": "oculto",
             "panorama_uf": [],
             "ranking_estados": [],
             "origem_recursos": [],
+            "autofinanciamento_recorte": [],
+            "top_setores_elite": [],
+            "assertividade_elite": [],
         }
 
     total_arrecadado = float(row_kpis[0] or 0.0)
     num_candidatos = int(row_kpis[1] or 0)
     num_doadores = int(row_kpis[2] or 0)
 
-    # Tabela agregada por candidato (apenas colunas numéricas para sucesso por decil + distribuição logarítmica)
+    # Tabela agregada por candidatura canônica (ano, cpf_candidato, cargo)
     df_cand = query_df(
         f"""
         SELECT
+            ano,
             cpf_candidato,
+            cargo,
             MAX(CAST(is_eleito AS INT)) as is_eleito,
             SUM(valor_receita) as total_receita
         FROM eleicoes
         {where}
-        GROUP BY cpf_candidato
+        GROUP BY ano, cpf_candidato, cargo
         """,
         params,
     )
     taxa_sucesso = calcular_sucesso_decil(df_cand)
+    total_eleitos = int(df_cand["is_eleito"].fillna(0).sum()) if not df_cand.empty else 0
 
-    # 1. Top 10 Doadores com Detalhamento de Destinatários (Otimizado via Window Function no DuckDB)
+    # 1. Top 10 Doadores com Detalhamento de Destinatários e Resolução Canônica de UF
     sql_doadores = f"""
         WITH Ranking AS (
             SELECT
-                cpf_cnpj_doador,
-                MAX(COALESCE(nome_doador, 'NÃO INFORMADO')) as nome_doador,
-                COALESCE(MAX(NULLIF(TRIM(sigla_uf_doador), '')), '-') as uf_doador,
-                SUM(valor_receita) as total_doador
-            FROM eleicoes
-            {where} AND cpf_cnpj_doador IS NOT NULL AND TRIM(cpf_cnpj_doador) != ''
-            AND NOT regexp_matches(UPPER(COALESCE(nome_doador, '')), '{REGEX_CROWD}')
-            GROUP BY cpf_cnpj_doador
+                e.cpf_cnpj_doador,
+                MAX(COALESCE(e.nome_doador, 'NÃO INFORMADO')) as nome_doador,
+                COALESCE(
+                    MAX(NULLIF(NULLIF(TRIM(e.uf_empresa), ''), 'BR')),
+                    MAX(s.uf_origem),
+                    MAX(NULLIF(NULLIF(NULLIF(TRIM(e.sigla_uf_doador), ''), 'BR'), '-')),
+                    MAX(NULLIF(NULLIF(TRIM(e.uf_candidato), ''), 'BR')),
+                    '-'
+                ) as uf_doador,
+                SUM(e.valor_receita) as total_doador
+            FROM eleicoes e
+            LEFT JOIN sede_doadores s ON e.nome_doador = s.nome_doador
+            {where_e} AND e.cpf_cnpj_doador IS NOT NULL AND TRIM(e.cpf_cnpj_doador) != ''
+            AND e.valor_receita > 0
+            AND NOT regexp_matches(UPPER(COALESCE(e.nome_doador, '')), '{REGEX_CROWD}')
+            GROUP BY e.cpf_cnpj_doador
             ORDER BY total_doador DESC
             LIMIT 10
         ),
@@ -629,14 +665,14 @@ def get_visao_geral(
                 ROW_NUMBER() OVER (PARTITION BY r.cpf_cnpj_doador ORDER BY SUM(e.valor_receita) DESC) as rn
             FROM eleicoes e
             JOIN Ranking r ON e.cpf_cnpj_doador = r.cpf_cnpj_doador
-            {where_e}
+            {where_e} AND e.valor_receita > 0
             GROUP BY r.cpf_cnpj_doador, r.nome_doador, r.uf_doador, r.total_doador, e.nome_candidato, e.sigla_partido, e.cargo, COALESCE(NULLIF(TRIM(e.uf_candidato), ''), 'BR')
         )
         SELECT * FROM DestinatariosAgg
         WHERE rn <= 50
         ORDER BY total_doador DESC, valor_repasse DESC
     """
-    df_doadores_bruto = query_df(sql_doadores, params + params_e)
+    df_doadores_bruto = query_df(sql_doadores, params_e + params_e)
 
     top_doadores = []
     if not df_doadores_bruto.empty:
@@ -659,24 +695,26 @@ def get_visao_geral(
             ]
             top_doadores.append({"nome": str(nome), "uf": uf_d, "total": float(total), "destinatarios": destinatarios})
 
-    # 2. Top 10 Candidatos com Origens (Otimizado via Window Function no DuckDB)
+    # 2. Top 10 Candidatos com Origens (Blindagem por ano, cpf_candidato, cargo + filtro de doadores > 0)
     sql_candidatos = f"""
         WITH Ranking AS (
             SELECT
+                ano,
                 cpf_candidato,
+                cargo,
                 MAX(nome_candidato) as nome_candidato,
                 MAX(sigla_partido) as sigla_partido,
-                MAX(cargo) as cargo,
                 COALESCE(NULLIF(TRIM(MAX(uf_candidato)), ''), 'BR') as uf_candidato,
                 SUM(valor_receita) as total_candidato
             FROM eleicoes
             {where} AND cpf_candidato IS NOT NULL AND TRIM(cpf_candidato) != ''
-            GROUP BY cpf_candidato
+            GROUP BY ano, cpf_candidato, cargo
             ORDER BY total_candidato DESC
             LIMIT 10
         ),
         DoadoresAgg AS (
             SELECT
+                r.ano,
                 r.cpf_candidato,
                 r.nome_candidato,
                 r.sigla_partido,
@@ -688,13 +726,20 @@ def get_visao_geral(
                     THEN COALESCE(MAX(e.nome_doador), '') || ' (PLATAFORMA DE CROWDFUNDING)'
                     ELSE COALESCE(MAX(e.nome_doador), 'NÃO INFORMADO')
                 END as nome_doador,
-                COALESCE(NULLIF(TRIM(MAX(e.sigla_uf_doador)), ''), '-') as uf_doador,
+                COALESCE(
+                    MAX(NULLIF(NULLIF(TRIM(e.uf_empresa), ''), 'BR')),
+                    MAX(s.uf_origem),
+                    MAX(NULLIF(NULLIF(NULLIF(TRIM(e.sigla_uf_doador), ''), 'BR'), '-')),
+                    MAX(NULLIF(NULLIF(TRIM(e.uf_candidato), ''), 'BR')),
+                    '-'
+                ) as uf_doador,
                 SUM(e.valor_receita) as valor_doado,
-                ROW_NUMBER() OVER (PARTITION BY r.cpf_candidato ORDER BY SUM(e.valor_receita) DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY r.ano, r.cpf_candidato, r.cargo ORDER BY SUM(e.valor_receita) DESC) as rn
             FROM eleicoes e
-            JOIN Ranking r ON e.cpf_candidato = r.cpf_candidato
+            JOIN Ranking r ON e.ano = r.ano AND e.cpf_candidato = r.cpf_candidato AND e.cargo = r.cargo
+            LEFT JOIN sede_doadores s ON e.nome_doador = s.nome_doador
             {where_e}
-            GROUP BY r.cpf_candidato, r.nome_candidato, r.sigla_partido, r.cargo, r.uf_candidato, r.total_candidato, e.cpf_cnpj_doador
+            GROUP BY r.ano, r.cpf_candidato, r.nome_candidato, r.sigla_partido, r.cargo, r.uf_candidato, r.total_candidato, e.cpf_cnpj_doador
         )
         SELECT * FROM DoadoresAgg
         WHERE rn <= 50
@@ -704,8 +749,8 @@ def get_visao_geral(
 
     top_candidatos = []
     if not df_candidatos_bruto.empty:
-        for (_, nome, partido_c, cargo_c, uf_c, total), group in df_candidatos_bruto.groupby(
-            ["cpf_candidato", "nome_candidato", "sigla_partido", "cargo", "uf_candidato", "total_candidato"],
+        for (ano_c, _, nome, partido_c, cargo_c, uf_c, total), group in df_candidatos_bruto.groupby(
+            ["ano", "cpf_candidato", "nome_candidato", "sigla_partido", "cargo", "uf_candidato", "total_candidato"],
             sort=False,
         ):
             doadores = [
@@ -715,9 +760,11 @@ def get_visao_geral(
                     group["uf_doador"],
                     group["valor_doado"],
                 )
+                if float(d_val or 0.0) > 0.0
             ]
             top_candidatos.append(
                 {
+                    "ano": int(ano_c),
                     "nome": str(nome),
                     "partido": str(partido_c),
                     "cargo": str(cargo_c),
@@ -838,12 +885,13 @@ def get_visao_geral(
                 SELECT
                     ano,
                     cpf_candidato,
+                    cargo,
                     MAX(CAST(COALESCE(is_empresario, FALSE) AS INT)) as com_elite,
                     MAX(CAST(COALESCE(is_eleito, FALSE) AS INT)) as eleito,
                     SUM(CASE WHEN is_empresario = TRUE THEN valor_receita ELSE 0.0 END) as vol_elite
                 FROM eleicoes
                 {where_recorte}
-                GROUP BY ano, cpf_candidato
+                GROUP BY ano, cpf_candidato, cargo
             )
             SELECT
                 'Com Apoio da Elite' as status,
@@ -864,12 +912,44 @@ def get_visao_geral(
             params_recorte,
         ).to_dict(orient="records")
 
-    # 7. Ranking de Partidos no Recorte Dinâmico (ou Cargos disputados pelo partido se partido único)
+    # 7. Gráfico Adaptativo de Partidos / Cargos / Estados no Recorte Dinâmico
     partidos_str = partido if isinstance(partido, str) else ""
     partidos_lista = [p.strip() for p in partidos_str.split(",") if p.strip() and p.strip().upper() != "TODOS"]
     is_partido_unico = len(partidos_lista) == 1
     partido_selecionado = partidos_lista[0] if is_partido_unico else None
-    if is_partido_unico:
+
+    cargo_str = cargo if isinstance(cargo, str) else ""
+    is_cargo_unico = bool(cargo_str.strip() and cargo_str.strip().upper() != "TODOS")
+    cargo_selecionado = cargo_str.strip().upper() if is_cargo_unico else None
+
+    uf_str = uf if isinstance(uf, str) else ""
+    ufs_lista = [u.strip().upper() for u in uf_str.split(",") if u.strip().upper() not in ("TODAS", "")]
+    is_uf_unica = len(ufs_lista) == 1 or cargo_selecionado in ("PRESIDENTE", "DEPUTADO DISTRITAL")
+
+    if is_partido_unico and is_cargo_unico and is_uf_unica:
+        # Todos os 3 filtros unitários: oculta gráfico para evitar barra única redundante
+        modo_grafico_partidos = "oculto"
+        top_partidos_recorte = []
+    elif is_partido_unico and is_cargo_unico and not is_uf_unica:
+        # 1 Partido + 1 Cargo + múltiplas UFs: mostra distribuição por UF das candidaturas do partido para o cargo
+        modo_grafico_partidos = "ufs_do_partido_cargo"
+        top_partidos_recorte = query_df(
+            f"""
+            SELECT
+                uf_candidato as partido,
+                SUM(valor_receita) as total
+            FROM eleicoes
+            {where}
+            AND uf_candidato IS NOT NULL AND TRIM(uf_candidato) NOT IN ('', 'BR', '-')
+            GROUP BY uf_candidato
+            ORDER BY total DESC
+            LIMIT 10
+            """,
+            params,
+        ).to_dict(orient="records")
+    elif is_partido_unico and not is_cargo_unico:
+        # 1 Partido + Todos os Cargos: mostra distribuição do partido por cargo
+        modo_grafico_partidos = "cargos_do_partido"
         top_partidos_recorte = query_df(
             f"""
             SELECT
@@ -885,6 +965,7 @@ def get_visao_geral(
             params,
         ).to_dict(orient="records")
     else:
+        modo_grafico_partidos = "partidos"
         top_partidos_recorte = query_df(
             f"""
             SELECT
@@ -904,6 +985,7 @@ def get_visao_geral(
             "total_arrecadado": total_arrecadado,
             "num_candidatos": num_candidatos,
             "num_doadores": num_doadores,
+            "total_eleitos": total_eleitos,
             "taxa_sucesso_decil": taxa_sucesso,
         },
         "top_10_doadores": top_doadores,
@@ -912,6 +994,8 @@ def get_visao_geral(
         "top_10_partidos": top_partidos_recorte,
         "is_partido_unico": is_partido_unico,
         "partido_selecionado": partido_selecionado,
+        "cargo_selecionado": cargo_selecionado,
+        "modo_grafico_partidos": modo_grafico_partidos,
         "panorama_uf": panorama_uf,
         "ranking_estados": ranking_estados,
         "origem_recursos": origem_recursos,
@@ -1191,14 +1275,15 @@ def get_custo_do_voto(
         ano=ano, cargo=cargo, uf=uf, partido=partido, modo_recurso=modo
     )
 
-    # Calcula total_receita, total_votos e custo_voto diretamente no DuckDB por candidato
+    # Calcula total_receita, total_votos e custo_voto diretamente no DuckDB por candidatura canônica (ano, cpf_candidato, cargo)
     df_cand = query_df(
         f"""
         SELECT
+            ano,
             cpf_candidato,
             COALESCE(MAX(nome_candidato), 'NÃO INFORMADO') as nome_candidato,
             COALESCE(MAX(sigla_partido), 'S/P') as partido,
-            COALESCE(MAX(cargo), '-') as cargo,
+            COALESCE(cargo, '-') as cargo,
             COALESCE(MAX(total_votos), 0) as total_votos,
             COALESCE(SUM(valor_receita), 0.0) as total_receita,
             CASE
@@ -1209,7 +1294,7 @@ def get_custo_do_voto(
             MAX(CAST(is_eleito AS INT)) as eleito
         FROM eleicoes
         {where}
-        GROUP BY cpf_candidato
+        GROUP BY ano, cpf_candidato, cargo
         """,
         params,
     )
@@ -1248,7 +1333,7 @@ def get_custo_do_voto(
         df_positivos = df_positivos.nlargest(5000, "total_receita")
 
     pontos = df_positivos[
-        ["cpf_candidato", "nome_candidato", "partido", "cargo", "total_votos", "total_receita", "custo_voto", "status_eleicao"]
+        ["ano", "cpf_candidato", "nome_candidato", "partido", "cargo", "total_votos", "total_receita", "custo_voto", "status_eleicao"]
     ].to_dict(orient="records")
 
     resultado_final = {
@@ -1416,15 +1501,18 @@ def get_teia_empresarial(
             SELECT
                 ano,
                 cpf_candidato,
+                cargo,
                 MAX(CAST(is_empresario AS INT)) as teve_empresario,
                 MAX(CAST(is_eleito AS INT)) as eleito
             FROM eleicoes
             {where}
-            GROUP BY ano, cpf_candidato
+            GROUP BY ano, cpf_candidato, cargo
         )
         SELECT
             COALESCE(AVG(CASE WHEN teve_empresario = 1 THEN eleito * 100.0 END), 0.0) as sucesso_com_empresario,
-            COALESCE(AVG(CASE WHEN teve_empresario = 0 THEN eleito * 100.0 END), 0.0) as sucesso_sem_empresario
+            COALESCE(AVG(CASE WHEN teve_empresario = 0 THEN eleito * 100.0 END), 0.0) as sucesso_sem_empresario,
+            COALESCE(SUM(eleito), 0) as total_eleitos_recorte,
+            COUNT(*) as total_candidaturas_recorte
         FROM Patrocinio
         """,
         params,
@@ -1598,6 +1686,7 @@ def get_teia_empresarial(
                 COALESCE(e.nome_doador, 'NÃO INFORMADO') as socio,
                 COALESCE(NULLIF(e.uf_empresa, 'BR'), s.uf_origem, NULLIF(e.sigla_uf_doador, 'BR'), NULLIF(e.uf_candidato, 'BR'), '-') as uf,
                 COALESCE(NULLIF(e.uf_empresa, 'BR'), '-') as uf_empresa,
+                COALESCE(NULLIF(TRIM(e.cnpj_basico), ''), '-') as cnpj_basico,
                 CASE 
                     WHEN e.razao_social IS NULL OR TRIM(e.razao_social) = '' OR UPPER(e.razao_social) = 'NÃO APLICÁVEL' 
                     THEN 'Sem Razão Social Mapeada (QSA Residual)' 
@@ -1624,6 +1713,8 @@ def get_teia_empresarial(
             MAX(CASE WHEN rn = 1 THEN empresa END) as empresa,
             MAX(CASE WHEN rn = 1 THEN setor END) as setor,
             COUNT(DISTINCT NULLIF(empresa, 'Sem Razão Social Mapeada (QSA Residual)')) as qtd_empresas,
+            COUNT(DISTINCT NULLIF(cnpj_basico, '-')) as qtd_cnpjs,
+            LIST(DISTINCT empresa) FILTER (WHERE empresa != 'Sem Razão Social Mapeada (QSA Residual)') as lista_empresas,
             SUM(valor_receita) as total,
             COUNT(*) as transacoes,
             COUNT(DISTINCT nome_candidato) as candidatos_apoiados,
@@ -1641,6 +1732,13 @@ def get_teia_empresarial(
         params_e,
     )
     maiores_socios = maiores_socios_raw.to_dict(orient="records") if not maiores_socios_raw.empty else []
+    for sc in maiores_socios:
+        raw_lista = sc.get("lista_empresas")
+        if raw_lista is None or (isinstance(raw_lista, float) and np.isnan(raw_lista)):
+            sc["lista_empresas"] = []
+        else:
+            sc["lista_empresas"] = [str(x) for x in list(raw_lista) if x is not None and pd.notna(x)]
+        sc["qtd_cnpjs"] = int(sc.get("qtd_cnpjs") or 0)
     if maiores_socios:
         socios_nomes = [s["socio"] for s in maiores_socios if s.get("socio")]
         if socios_nomes:
@@ -1689,6 +1787,8 @@ def get_teia_empresarial(
             "volume_para_eleitos": float(row_elite[3] or 0.0),
             "sucesso_com_empresario": float(row_sucesso[0] or 0.0),
             "sucesso_sem_empresario": float(row_sucesso[1] or 0.0),
+            "total_eleitos_recorte": int(row_sucesso[2] or 0) if row_sucesso else 0,
+            "total_candidaturas_recorte": int(row_sucesso[3] or 0) if row_sucesso else 0,
         },
         "top_setores": top_setores,
         "top_empresas": top_empresas,
@@ -1743,11 +1843,12 @@ def get_origem_autofinanciamento(
             SELECT
                 ano,
                 cpf_candidato,
+                cargo,
                 MAX(COALESCE(autofinanciamento, 0)) as usou_auto,
                 MAX(CAST(COALESCE(is_eleito, FALSE) AS INT)) as eleito
             FROM eleicoes
             {where}
-            GROUP BY ano, cpf_candidato
+            GROUP BY ano, cpf_candidato, cargo
         ),
         Taxas AS (
             SELECT
@@ -1792,17 +1893,17 @@ def get_origem_autofinanciamento(
         "taxa_sucesso_terceiros": float(row_auto[5] or 0.0),
     }
 
-    # Maiores Investidores da Própria Campanha no recorte (direto no DuckDB)
+    # Maiores Investidores da Própria Campanha no recorte (direto no DuckDB com Blindagem de Candidatura)
     top_investidores = query_df(
         f"""
         SELECT
             COALESCE(MAX(nome_candidato), 'Não informado') as nome,
             COALESCE(MAX(sigla_partido), 'S/P') as partido,
-            COALESCE(MAX(cargo), '-') as cargo,
+            COALESCE(cargo, '-') as cargo,
             SUM(valor_receita) as total
         FROM eleicoes
         {where} AND autofinanciamento = 1
-        GROUP BY cpf_candidato
+        GROUP BY ano, cpf_candidato, cargo
         ORDER BY total DESC
         LIMIT 10
         """,
