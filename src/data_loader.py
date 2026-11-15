@@ -7,6 +7,7 @@ usando DuckDB/PyArrow e utilitários para popular seletores e filtros na interfa
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -14,26 +15,123 @@ from typing import Optional
 import duckdb
 import pandas as pd
 import pyarrow.parquet as pq
+import requests
 
 # Garante que a raiz do projeto esteja no sys.path para importações relativas
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.convert_csv_to_parquet import (
-    DEFAULT_PARQUET_PATH,
-    converter_csv_para_parquet,
-)
+DEFAULT_PARQUET_PATH = PROJECT_ROOT / "data" / "processed" / "base_consolidada_eleicoes.parquet"
+PARQUET_DRIVE_FILE_ID = os.environ.get("PACD_PARQUET_DRIVE_ID", "1CAUL7QTz587o0VpUkfhLBPn2EpMEHfwN")
 
 logger = logging.getLogger(__name__)
+
+
+def parquet_integridade_valida(caminho_parquet: Path, min_size_bytes: int = 1_000_000) -> bool:
+    """Verifica se o arquivo Parquet existe, possui tamanho válido e assinatura binária PAR1.
+
+    Rejeita automaticamente arquivos ausentes, downloads interrompidos e ponteiros de
+    texto do Git LFS (~130 bytes) que quebrariam o DuckDB/PyArrow.
+    """
+    if not caminho_parquet.exists() or not caminho_parquet.is_file():
+        return False
+
+    tamanho = caminho_parquet.stat().st_size
+    if tamanho < min_size_bytes:
+        return False
+
+    try:
+        with open(caminho_parquet, "rb") as f:
+            header = f.read(4)
+            f.seek(-4, os.SEEK_END)
+            footer = f.read(4)
+        return header == b"PAR1" and footer == b"PAR1"
+    except OSError:
+        return False
+
+
+def garantir_parquet_local(
+    caminho_parquet: str | Path = DEFAULT_PARQUET_PATH,
+    file_id_drive: str = PARQUET_DRIVE_FILE_ID,
+    forcar_download: bool = False,
+) -> Path:
+    """Garante que o arquivo Parquet consolidado exista localmente e seja íntegro.
+
+    Se o arquivo estiver ausente ou corrompido (ex.: ponteiro Git LFS), baixa
+    automaticamente a base consolidada a partir do Google Drive na primeira execução.
+    """
+    parquet_path = Path(caminho_parquet)
+
+    if not forcar_download and parquet_integridade_valida(parquet_path):
+        return parquet_path
+
+    if not file_id_drive:
+        raise RuntimeError(
+            f"Arquivo Parquet inválido ou ausente em '{parquet_path}' e nenhum ID do Google Drive foi informado."
+        )
+
+    if parquet_path.exists():
+        logger.warning(
+            "Arquivo '%s' encontrado com integridade inválida (%d bytes — possível ponteiro LFS ou download incompleto). Baixando novamente do Google Drive...",
+            parquet_path,
+            parquet_path.stat().st_size,
+        )
+    else:
+        logger.info(
+            "Base Parquet ausente em '%s'. Iniciando ingestão automática via Google Drive (ID: %s)...",
+            parquet_path,
+            file_id_drive,
+        )
+
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = parquet_path.with_suffix(".parquet.part")
+    url = f"https://drive.usercontent.google.com/download?id={file_id_drive}&export=download&confirm=t"
+
+    try:
+        with requests.Session() as session:
+            response = session.get(url, stream=True, timeout=120)
+            response.raise_for_status()
+
+            baixado = 0
+            proximo_log_mb = 25
+            with open(temp_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        baixado += len(chunk)
+                        baixado_mb = baixado / (1024 * 1024)
+                        if baixado_mb >= proximo_log_mb:
+                            logger.info("Download do Parquet em andamento: %.1f MB...", baixado_mb)
+                            proximo_log_mb += 25
+
+        if not parquet_integridade_valida(temp_path):
+            raise RuntimeError(
+                f"Arquivo baixado do Google Drive (ID: {file_id_drive}) falhou na validação binária PAR1/tamanho."
+            )
+
+        temp_path.replace(parquet_path)
+        logger.info(
+            "Base Parquet salva e validada em '%s' (%.2f MB).",
+            parquet_path,
+            parquet_path.stat().st_size / (1024 * 1024),
+        )
+        return parquet_path
+    except Exception as exc:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+        logger.error("Falha ao baixar a base Parquet do Google Drive: %s", exc)
+        raise RuntimeError(
+            f"Não foi possível garantir o arquivo Parquet em '{parquet_path}': {exc}"
+        ) from exc
 
 
 def carregar_dados(caminho_parquet: str | Path | None = None) -> pd.DataFrame:
     """Carrega o DataFrame consolidado de eleições a partir de arquivo Parquet.
 
-    Se o arquivo Parquet não existir no caminho indicado, dispara automaticamente
-    o processo de conversão e ingestão do CSV bruto. Lê os dados de forma ultra-rápida
-    utilizando a engine vetorial do DuckDB com fallback para PyArrow.
+    Se o arquivo Parquet não existir ou estiver corrompido (ex.: ponteiro Git LFS),
+    dispara automaticamente o download via Google Drive. Lê os dados de forma
+    ultra-rápida utilizando a engine vetorial do DuckDB com fallback para PyArrow.
 
     Args:
         caminho_parquet: Caminho opcional para o arquivo Parquet. Caso omitido,
@@ -43,26 +141,12 @@ def carregar_dados(caminho_parquet: str | Path | None = None) -> pd.DataFrame:
         pd.DataFrame: DataFrame contendo a base consolidada de doações e candidaturas.
 
     Raises:
-        RuntimeError: Se o arquivo não existir e a conversão automática falhar.
+        RuntimeError: Se o arquivo não existir e o download automático falhar.
     """
-    if caminho_parquet is None:
-        parquet_path = PROJECT_ROOT / DEFAULT_PARQUET_PATH
-    else:
-        parquet_path = Path(caminho_parquet)
+    parquet_path = DEFAULT_PARQUET_PATH if caminho_parquet is None else Path(caminho_parquet)
 
-    # Dispara conversão automática se o arquivo Parquet não existir
-    if not parquet_path.exists():
-        logger.info(
-            "Parquet '%s' não encontrado. Disparando pipeline de conversão...",
-            parquet_path,
-        )
-        try:
-            converter_csv_para_parquet(caminho_parquet=parquet_path)
-        except Exception as exc:
-            logger.error("Erro ao converter CSV para Parquet automaticamente: %s", exc)
-            raise RuntimeError(
-                f"Arquivo Parquet não encontrado e falha ao gerar automaticamente: {exc}"
-            ) from exc
+    # Garante existência e integridade binária do arquivo Parquet antes da leitura
+    parquet_path = garantir_parquet_local(parquet_path)
 
     # Leitura otimizada via DuckDB (com fallback para PyArrow)
     try:

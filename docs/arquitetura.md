@@ -1,82 +1,74 @@
 # 🏗️ Arquitetura do Sistema e Engenharia de Dados
 
-Este documento descreve a arquitetura técnica, os padrões de projeto, a estratégia de armazenamento colunar e o ciclo de vida dos dados do **Observatório do Financiamento Eleitoral**.
+Este documento descreve a arquitetura técnica, a estratégia de auto-ingestão da base consolidada e o processamento em memória adotados pelo painel **PACD (Pesquisa Aplicada em Ciência de Dados)**.
 
 ---
 
 ## 🏛️ 1. Visão Geral da Arquitetura
 
-O sistema adota uma arquitetura em camadas otimizada para alto desempenho em exploração analítica local de microdados massivos (~1 milhão de registros), sem a necessidade de um banco de dados relacional tradicional (RDBMS) em servidor remoto.
+A plataforma opera inteiramente em arquitetura desacoplada **API Analítica + SPA Standalone**, executando consultas sobre **5.310.738 transações** em milissegundos sem necessidade de servidor de banco de dados externo (RDBMS).
 
 ```mermaid
 flowchart TD
-    subgraph Ingestao ["Camada de Ingestão e Processamento"]
-        A["27 CSVs Estaduais (data/raw/estados)"] --> B["DuckDB SQL Engine (convert_csv_to_parquet.py)"]
-        B --> C["Parquet Canônico Otimizado (42 MB)"]
+    subgraph Bootstrap ["Camada de Auto-Ingestão e Integridade"]
+        A["Google Drive (ID: 1CAUL7QTz587o0VpUkfhLBPn2EpMEHfwN)"] -->|"1a Execucao ou Arquivo Invalido"| B["src/data_loader.py (garantir_parquet_local)"]
+        B -->|"Validacao PAR1 e >= 1 MB"| C["data/processed/base_consolidada_eleicoes.parquet (~224,6 MB)"]
     end
 
-    subgraph Armazenamento ["Camada de Dados & DuckDB"]
-        C --> D["src/data_loader.py (DuckDB / PyArrow)"]
-        D --> E["DuckDB Concurrency Lock (threading.Lock)"]
-        F["data/geo/brazil-states.geojson (3.3 MB)"] --> G["src/geo.py (GeoJSON Local)"]
+    subgraph DuckDB ["Camada Analítica In-Memory"]
+        C --> D["VIEW eleicoes (Saneamento Contábil + tipo_receita)"]
+        D --> E["TABLE sede_doadores (Resolucao Geografica de Origem)"]
+        E --> F["Lock de Concorrencia (threading.Lock) + Cache em Memoria"]
     end
 
-    subgraph Backend ["Camada Backend (FastAPI / Uvicorn)"]
-        E --> H["src/metrics.py (Métricas Analíticas, Regex Sanitization)"]
-        H --> I["api/main.py (FastAPI Endpoints)"]
-        I --> J["/health & /api/meta/filtros"]
-        I --> K["/api/global (Bloco Fixo 'Tudo e Todos')"]
-        I --> L["/api/visao-geral, /api/custo-do-voto, /api/porta-giratoria, /api/origem-autofinanciamento"]
+    subgraph API ["Camada Backend (api/main.py - FastAPI)"]
+        F --> G["src/metrics.py (calcular_sucesso_decil)"]
+        G --> H["/health e /api/meta/filtros"]
+        G --> I["/api/global (Bloco Fixo Tudo e Todos)"]
+        G --> J["/api/visao-geral e /api/geografia"]
+        G --> K["/api/custo-do-voto, /api/teia-empresarial e /api/origem-autofinanciamento"]
     end
 
-    subgraph Frontend ["Camada de Apresentação (SPA React 18 + TailwindCSS + Chart.js)"]
-        I --> M["frontend/index.html (Single-Page Application)"]
-        M --> N["Bloco Global Fixo (4 KPIs + 4 Gráficos Históricos)"]
-        M --> O["Barra de Filtros (Alto Contraste com Travas Eleitorais)"]
-        M --> P["Tabs / Segmented Control ('1 por vez')"]
-        P --> Q["Visão Geral (Top Doadores, Maiores Candidatos, Log Histograma, Ranking Estados)"]
-        P --> R["Custo do Voto (Scatter Plot com Piso de Viabilidade)"]
-        P --> S["Porta Giratória (Retorno R$, Fornecedores Privados Higienizados)"]
-        P --> T["Origem e Autofinanciamento (Fontes, Taxas de Sucesso Reais)"]
+    subgraph SPA ["Camada de Apresentacao (frontend/index.html)"]
+        H --> L["React 18 + Tailwind CSS + Chart.js 4 (CDN)"]
+        I --> L
+        J --> L
+        K --> L
+        L --> M["Interruptor 3 Fases (Todos / Somente Doacoes / Elite Empresarial)"]
+        L --> N["Cartograma Grid 8x8 + Graficos + Tabelas Expansiveis"]
+        L --> O["Rodape Metodologico e Auditoria SPCE/TSE"]
     end
 ```
 
 ---
 
-## ⚡ 2. Estratégia de Alto Desempenho (DuckDB + Parquet)
+## 📦 2. Estratégia de Distribuição Sem Git LFS
 
-### Por que DuckDB com Apache Parquet?
-- **Processamento Vetorial:** O DuckDB executa filtros, agregações e projeções diretamente no grão colunar do arquivo Parquet, lendo apenas as colunas requisitadas sem carregar o arquivo inteiro na memória RAM desnecessariamente.
-- **Compressão Snappy:** Redução de ~144 MB de CSVs brutos para **42.13 MB**, acelerando o tempo de I/O em disco.
-- **Concorrência Segura (Thread-Safety):** Implementação de cursor dedicado e `threading.Lock()` no backend FastAPI, garantindo execução simultânea sem colisões de conexões assíncronas.
-- **Velocidade de Ingestão:** Conversão e consolidação de 959.770 registros em aproximadamente **2,0 segundos** via DuckDB.
+Para evitar corrupção de binários e estouro de cota de banda causados por ponteiros de texto do Git LFS (`~130 bytes`), o arquivo `base_consolidada_eleicoes.parquet` **não é versionado no Git** (mantido no `.gitignore`).
 
----
-
-## 🧭 3. Arquitetura Single-Page Application (SPA) e Diretrizes de UI/UX
-
-A plataforma adota o padrão **Single-Page Application (SPA)** moderna, reativa e sem recarregamento:
-- **Zero Textos e Zero Conclusões:** Interface focada puramente na visualização analítica — exclusivamente KPIs, controles de filtro e gráficos com seus títulos objetivos (sem caixas de "insights", textos discursivos ou conclusões).
-- **Bloco Global Fixo ("Tudo e Todos"):** Topo da página apresenta métricas e rankings consolidados de toda a base histórica (2018 a 2024), imunes aos filtros.
-- **Visualização "1 por vez":** Abaixo do bloco global, o usuário alterna entre as 4 seções analíticas via abas/segmented control, prevenindo sobrecarga visual e scroll excessivo.
-- **Barra de Filtros:** Container de alto contraste visual com travas de integridade eleitoral automáticas:
-  - Anos Gerais (2018/2022): Restringe aos cargos federais/estaduais/distritais e desativa filtro de município.
-  - Anos Municipais (2020/2024): Restringe aos cargos de Prefeito e Vereador.
-  - Custo do Voto: Scatter plot unicamente liberado mediante seleção de 1 Ano e 1 Cargo específico.
+No arranque de [api/main.py](../api/main.py) ou ao chamar `carregar_dados()` em [src/data_loader.py](../src/data_loader.py):
+1. A função `parquet_integridade_valida()` verifica se o arquivo existe, tem ao menos `1.000.000` de bytes e possui os *magic bytes* binários `b"PAR1"` no início e no fim do arquivo.
+2. Caso falhe ou não exista, `garantir_parquet_local()` baixa o arquivo em streaming via `requests.Session` para um arquivo temporário `.parquet.part`, valida os *magic bytes* após o término e substitui o destino de forma atômica.
+3. O ID padrão (`1CAUL7QTz587o0VpUkfhLBPn2EpMEHfwN`) pode ser sobrescrito via variável de ambiente `PACD_PARQUET_DRIVE_ID`.
 
 ---
 
-## 🗺️ 4. Módulo Geoespacial (`src/geo.py`)
+## ⚡ 3. Motor DuckDB In-Memory (`api/main.py`)
 
-Para fornecer métricas e rankings geográficos sem latência de rede:
-1. **Malha Cartográfica Local:** O arquivo GeoJSON com a delimitação geográfica das 27 UFs está armazenado em `data/geo/brazil-states.geojson`.
-2. **Carregamento Otimizado:** Leitura rápida e parsing JSON sem dependências pesadas de frameworks externos.
-3. **Ranking Federativo:** Renderização dinâmica das 10 maiores UFs em volume financeiro na SPA via Chart.js.
+Ao subir o servidor FastAPI:
+- Uma conexão DuckDB em memória (`:memory:`) cria a **`VIEW eleicoes`** sobre o Parquet, aplicando em tempo de leitura:
+  - Padronização de `cpf_candidato` com fallback para `sequencial_candidato` quando ausente.
+  - **Saneamento cirúrgico de outliers contábeis** autodeclarados no SPCE/TSE (Amazonas 2020 e Salvador/BA 2024).
+  - Classificação canônica da coluna derivada **`tipo_receita`** (`Financiamento Privado`, `Repasse entre Aliados`, `Dinheiro Público`).
+- Em seguida, é materializada em memória a tabela **`sede_doadores`**, que resolve o estado de origem predominante de cada doador quando `sigla_uf_doador` ou `uf_empresa` estão ausentes.
+- Todas as consultas utilizam cursores derivados (`conn.cursor()`) protegidos por `threading.Lock()` e armazenam resultados frequentes em dicionários de cache em memória (`cache_filtros`, `cache_global`, `cache_visao_geral`, `cache_geografia`, `cache_custo_voto`, `cache_teia`, `cache_autofinanciamento`).
 
 ---
 
-## 🔒 5. Higienização Textual e Segurança
+## 🖥️ 4. Arquitetura Frontend (`frontend/index.html`)
 
-- **Malha Fina Textual (Regex):** Filtragem case-insensitive e insensível a acentuação na detecção de doadores/fornecedores para expurgar entidades institucionais/públicas e repasses de aliados, isolando estritamente relações comerciais privadas na Porta Giratória.
-- **Anonimização de Doadores PF:** Função `anonimizar_documento()` mascara os 6 dígitos centrais do CPF (`***.123.456-**`).
-- **Auditoria de Fornecedores:** Conexão direta entre CNPJ básico de fornecedores e doadores para investigação de conformidade pública, preservando a transparência ativa preconizada pela LAI (Lei de Acesso à Informação).
+- **Zero Build Step:** React 18, ReactDOM 18, Babel Standalone, Tailwind CSS e Chart.js 4 carregados diretamente via CDN, mantendo a SPA contida em um único arquivo HTML.
+- **Estado Reativo Centralizado:**
+  - `modoRecurso` (`todos`, `privado`, `elite`) propaga-se tanto para o Bloco Fixo Global quanto para a aba dinâmica ativa.
+  - Travas constitucionais entre pleitos gerais (`2018`/`2022`) e municipais (`2020`/`2024`), bloqueio de cargos municipais no `DF` e restauração automática de UF ao alternar cargos.
+- **Cartograma Geográfico Nativo:** O Mapa de Calor do Brasil na aba *Análise Geográfica & Fluxo de Recursos* utiliza um **Cartograma Grid 8×8 (`TILE_MAP_GRID`)** implementado nativamente em React/Tailwind sobre as 27 UFs, dispensando malhas GeoJSON externas ou bibliotecas pesadas como Plotly.

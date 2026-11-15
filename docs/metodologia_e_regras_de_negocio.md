@@ -1,84 +1,69 @@
 # 🔬 Metodologia Científica e Regras de Negócio
 
-Este documento descreve o arcabouço metodológico, as hipóteses teóricas investigadas e as regras de negócio consolidadas a partir do documento oficial de especificação (`Resumo_Colunas_Tabela_FInal.pdf`) da base de dados eleitorais.
+Este documento consolida as hipóteses investigativas, os critérios de integridade contábil e as regras de visualização da plataforma **PACD (Pesquisa Aplicada em Ciência de Dados)** sobre o financiamento eleitoral brasileiro pós-ADI 4650 (2018–2024).
 
 ---
 
-## 🎯 1. Hipóteses Científicas Investigadas
+## 🎯 1. Eixos e Hipóteses Investigadas
 
-### Hipótese H1: O Teto de Vidro Financeiro (Piso de Viabilidade)
-> *"Existe um custo por voto mínimo e um piso empírico de capital financeiro abaixo do qual a viabilidade eleitoral para cargos majoritários e proporcionais é estatisticamente nula."*
+### Eixo 1: Concentração de Capital e Piso de Viabilidade Eleitoral
+> *"Os recursos eleitorais seguem uma distribuição de cauda pesada, existindo um patamar financeiro mínimo (piso de viabilidade) e um diferencial significativo na taxa de vitória entre o decil superior e a base menos financiada."*
 
-- **Formalização Matemática:**  
-  $$Custo\_Voto_i = \frac{\sum Receitas_i}{Total\_Votos_i}$$
+- **Custo do Voto:**
+  $$Custo\_Voto_i = \frac{\sum Receitas_i}{\max(Total\_Votos_i)}$$
 - **Piso Empírico de Viabilidade:**
-  $$Piso_{cargo, ano} = \min \{ \text{Receita}_k \mid k \in \text{Eleitos}, \text{Receita}_k > 0 \}$$
-- **Critério de Validação Estatística:**
-  - Aplica-se o teste não-paramétrico de **Mann-Whitney U** para testar se a distribuição de receitas dos candidatos eleitos é estocasticamente superior à dos não eleitos ($H_0: \text{Receita}_{eleito} \leq \text{Receita}_{nao\_eleito}$; $H_1: \text{Receita}_{eleito} > \text{Receita}_{nao\_eleito}$).
-  - Verifica-se se a proporção de candidatos eleitos com receita inferior ao $Piso_{cargo, ano}$ é estatisticamente igual a zero.
+  $$Piso = \min \{ \text{Receita}_k \mid k \in \text{Eleitos}, \text{Receita}_k > 0 \}$$
+- **Diferencial Top 10% vs. Bottom 50%:** Calculado pela função `calcular_sucesso_decil()` em [src/metrics.py](../src/metrics.py), comparando a taxa de eleição das candidaturas no decil mais financiado contra a metade inferior no mesmo recorte.
+
+### Eixo 2: Operação da Elite Empresarial Pós-ADI 4650
+> *"Mesmo após o veto a doações diretas de Pessoas Jurídicas pelo STF, redes corporativas continuam influenciando disputas eleitorais por meio de doações de Pessoas Físicas vinculadas ao Quadro de Sócios e Administradores (QSA/RFB)."*
+
+- **Identificação da Elite (`is_empresario`):** Cruzamento entre o `cpf_cnpj_doador` (quando `is_cpf = TRUE`) e a base de sócios/administradores de empresas ativas da Receita Federal, vinculando `cnpj_basico`, `razao_social`, `setor_economico` (CNAE/IBGE) e `uf_empresa`.
+- **Visão Consolidada na Teia Empresarial:** As gavetas sanfona agrupam todas as transferências na relação única **`(Sócio ➔ Candidato)`**, exibindo a contagem de **Transações** e o **Montante Acumulado**.
+
+### Eixo 3: Fluxos Federativos e Rotas de Influência Interestadual
+> *"A sede matriz da empresa ligada ao sócio doador (`uf_empresa`) permite rastrear fluxos financeiros interestaduais mesmo quando o domicílio da Pessoa Física (`sigla_uf_doador`) está protegido por sigilo/LGPD."*
+
+- Rastreia repasses em que a UF de origem (`uf_empresa` / `sigla_uf_doador` / `sede_doadores`) difere de `uf_candidato`.
+- Em disputas presidenciais (`cargo = 'PRESIDENTE'`), o mapa federativo exibe a origem estadual dos recursos e a tabela interestadual mapeia os fluxos para o escopo nacional `'BR'`.
 
 ---
 
-### Hipótese H2: O Circuito da Porta Giratória (Doador $\rightarrow$ Fornecedor)
-> *"O veto formal a doações empresariais (ADI 4650 do STF) é contornado por meio da triangulação entre doações de pessoas físicas e a contratação de empresas ligadas ao seu Quadro de Sócios e Administradores (QSA)."*
+## 📐 2. Regras de Integridade, Travas e Saneamento
 
-- **Mapeamento de Vínculo:**
-  Conexão entre o `cpf_cnpj_doador` (Pessoa Física) e as empresas prestadoras de serviços da campanha através da raiz cadastral de 8 dígitos (`cnpj_basico`).
-- **Taxa de Retorno Financeiro:**
-  $$Taxa\_Retorno (\%) = \left( \frac{\text{Valor Recebido como Fornecedor}}{\text{Valor Doado}} \right) \times 100$$
-- **Saldo Líquido da Operação:**
-  $$Saldo\_Liquido = \text{Valor Recebido como Fornecedor} - \text{Valor Doado}$$
-- **Critério de Auditoria:**
-  Identificação de casos em que a taxa de retorno supera 100%, caracterizando um cenário em que a doação serviu como porta de entrada comercial para a obtenção de contratos de campanha lucrativos.
+### 2.1. Blindagem Contábil de Candidaturas
+- Todas as agregações dinâmicas por candidato utilizam a chave composta **`(ano, cpf_candidato, cargo)`** (e `sequencial_candidato` no bloco global), evitando que o mesmo CPF em eleições diferentes (ex.: 2018 e 2022) ou cargos diferentes tenha receitas somadas indevidamente ou seus votos duplicados.
 
----
+### 2.2. Travas Constitucionais de Filtro
+- **Eleições Gerais (2018 e 2022):** Restritas a *Presidente*, *Governador*, *Senador*, *Deputado Federal*, *Deputado Estadual* e *Deputado Distrital*.
+- **Eleições Municipais (2020 e 2024):** Restritas a *Prefeito* e *Vereador*.
+- **Art. 32 da CF/88 (Distrito Federal):** Bloqueio automático de cargos municipais (*Prefeito* e *Vereador*) quando apenas `DF` está selecionado.
+- **Trava do Custo do Voto:** Exige obrigatoriamente a seleção de **1 Cargo específico** para evitar distorções de escala entre disputas proporcionais e majoritárias.
+- **Adaptação do Gráfico de Partidos:**
+  - Múltiplos partidos selecionados ➔ exibe *Top Partidos*.
+  - 1 Partido específico com múltiplas UFs ➔ adapta para *Distribuição por Estado das Candidaturas*.
+  - 1 Partido + 1 UF + 1 Cargo específico ➔ oculta o gráfico redundante (`modo_grafico_partidos = 'oculto'`).
 
-## 📐 2. Regras de Negócio e Tratamento de Dados (TSE & CGU)
+### 2.3. Classificação de Recursos e Filtro de Crowdfunding
+- **Interruptor Global em 3 Fases:**
+  - `todos`: Base completa.
+  - `privado` (*Somente Doações*): `tipo_receita = 'Financiamento Privado'`.
+  - `elite` (*Elite Empresarial*): `tipo_receita = 'Financiamento Privado' AND is_empresario = TRUE`.
+- **Higienização de Intermediários (`REGEX_CROWD`):** Nos rankings de maiores doadores e sócios financiadores, plataformas de arrecadação coletiva (vaquinha/crowdfunding) e intermediários de pagamento são filtrados para não mascararem os financiadores finais.
 
-Conforme as diretrizes especificadas em `Resumo_Colunas_Tabela_FInal.pdf`:
+### 2.4. Auditoria de Qualidade e Saneamento Cirúrgico (SPCE/TSE)
+Na camada analítica (`VIEW eleicoes` em [api/main.py](../api/main.py)), dois erros extremos de digitação autodeclarados no sistema SPCE/TSE são saneados cirurgicamente para preservar a fidelidade estatística:
+1. **Outlier do Amazonas (2020):** Rateio de material gráfico estimado de R$ 2.486,00 entre 12 vereadores do Republicanos no AM (R$ 207,17 cada) lançado sem pontuação decimal como R$ 207.166.666,66 por candidato (`cpf_cnpj_doador = '38121911000140'` com valor `> 200.000.000`). Saneado para **R$ 207,17**.
+2. **Outlier de Salvador/BA (2024):** Lançamento autodeclarado de R$ 1.250.125.000,00 para candidatura a vereador (`cpf_cnpj_doador = '16068108000156'`). Saneado para **R$ 1.250,00**.
 
-### 2.1. Tipagem e Preservação de Identificadores
-- **`ano` (String/VARCHAR):**  
-  O ano não deve ser operado como número contínuo, mas como dimensão categórica discreta (`'2018'`, `'2020'`, `'2022'`, `'2024'`), evitando médias temporais aritmeticamente espúrias.
-- **`cpf_candidato` (LPAD 11 dígitos):**  
-  CPFs iniciados com zero devem obrigatoriamente manter o comprimento de 11 dígitos via `zfill(11)` para evitar perda de dígitos e quebra de integridade referencial.
-- **`cnpj_basico` (8 dígitos):**  
-  Raiz cadastral limpa sem caracteres especiais, correspondente aos primeiros 8 dígitos do CNPJ, permitindo junção direta com a base do QSA da Receita Federal.
-- **Valores Monetários (`valor_receita` e `valor_recebido_como_fornecedor`):**  
-  Parsing estrito do padrão monetário brasileiro (`1.234,56` $\rightarrow$ `1234.56`), sem truncamento de centavos nem multiplicação por 100.
-
-### 2.2. Tratamento Geográfico por Escopo do Pleito
-- **Eleições Gerais (2018 e 2022):**  
-  Disputas para Presidente, Senador, Governador, Deputado Federal e Deputado Estadual ocorrem no escopo estadual ou nacional. Portanto, as colunas `municipio_candidato` e `id_municipio_tse_candidato` são estruturalmente mantidas como `NULL` / vazias.
-- **Eleições Municipais (2020 e 2024):**  
-  Disputas para Prefeito e Vereador ocorrem no escopo do município. O preenchimento de `municipio_candidato` e `id_municipio_tse_candidato` é de 100%.
-
-### 2.3. Tipologia de Fontes de Financiamento (`tipo_receita`)
-As receitas são classificadas em três grandes categorias analíticas:
-1. **Dinheiro Público:**
-   - Fundo Especial de Financiamento de Campanha (FEFC)
-   - Fundo Especial de Assistência Financeira aos Partidos Políticos (Fundo Partidário)
-2. **Financiamento Privado:**
-   - Doações financeiras de pessoas físicas
-   - Autofinanciamento (aportes do próprio candidato à sua campanha)
-   - Doações estimáveis em dinheiro (serviços ou cessão de bens)
-3. **Repasse entre Aliados:**
-   - Recursos repassados por outros candidatos ou comitês financeiros da mesma coligação partidária.
-
-### 2.4. Detecção de Autofinanciamento (`autofinanciamento`)
-- Flag binária calculada como:
-  $$\text{autofinanciamento} = \begin{cases} 1, & \text{se } \text{cpf\_candidato} == \text{cpf\_cnpj\_doador} \\ 0, & \text{caso contrário} \end{cases}$$
-- Permite analisar o impacto do capital patrimonial pessoal do candidato em suas chances reais de vitória eleitoral.
+### 2.5. Legislação e LGPD
+- **Autofinanciamento (Lei nº 13.877/2019):** A partir das eleições de 2020, o uso de recursos próprios passou a ser limitado a 10% do teto de gastos do cargo — explicando por que o recorde histórico de 2018 (R$ 57,03 milhões) não se repete nos ciclos seguintes.
+- **Sigilo de Pessoas Físicas:** Em respeito à legislação eleitoral e à LGPD, endereços/UFs de doadores pessoas físicas frequentemente não constam nos registros públicos (`sigla_uf_doador`).
 
 ---
 
-## 🎨 3. Padrões de Visualização de Dados (Data Visualization Guidelines)
+## 🎨 3. Padrões de Visualização de Dados
 
-O projeto adota regras estritas de design analítico para evitar distorções de percepção:
-
-1. **Proibição de Gráficos de Pizza (`pie plot`) e Rosca (`donut plot`):**  
-   O olho humano possui baixa precisão para julgar ângulos e áreas em 2D. Todas as partições de recursos utilizam **gráficos de barras horizontais ordenadas** (`px.bar(..., orientation='h')`) com percentuais e valores nominais explícitos no final de cada barra.
-2. **Escala Logarítmica para Variáveis Financeiras:**  
-   Como a distribuição de capital de campanha é hiperconcentrada (seguindo uma distribuição de cauda pesada / Pareto), histogramas e gráficos de dispersão utilizam escala logarítmica para visualização legível de ordens de magnitude.
-3. **Mapas Coropléticos Federativos (Heatmaps):**  
-   Apresentação geoespacial das 27 UFs com escalas sequenciais de alta legibilidade (`YlOrRd`, `Blues`, `Greens`, `Purples`) e limites territoriais pré-ajustados (`fitbounds='locations'`).
+1. **Ausência de Gráficos Circulares:** Proibição de gráficos de pizza (`pie`) e rosca (`doughnut`), priorizando gráficos de barras ordenadas (mais precisos para comparação quantitativa).
+2. **Escala Logarítmica para Assimetria Financeira:** Utilizada no histograma de distribuição de receitas para representar ordens de grandeza em distribuições de cauda pesada.
+3. **Cartograma Grid 8×8:** Representação uniforme das 27 UFs no mapa de calor para evitar que estados de grande área territorial (como AM ou PA) dominem visualmente sobre estados populosos de menor extensão (como RJ ou DF).

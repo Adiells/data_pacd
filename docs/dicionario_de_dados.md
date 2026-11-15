@@ -1,52 +1,69 @@
-# 📚 Dicionário de Dados: Base Consolidada de Eleições
+# 📚 Dicionário de Dados: Base Consolidada de Eleições (2018–2024)
 
-Este documento descreve detalhadamente o esquema e as regras de negócio de cada coluna presente no arquivo canônico de dados:  
+Este documento descreve o esquema oficial das colunas presentes no arquivo colunar:  
 **`data/processed/base_consolidada_eleicoes.parquet`**
 
 ---
 
 ## 🗂️ Metadados do Arquivo
 
-- **Formato:** Apache Parquet (Compressão Snappy)
-- **Tamanho:** ~42.13 MB
-- **Total de Linhas:** 959.770 registros de transações de receitas
-- **Abrangência Temporal:** Eleições 2018, 2020, 2022 e 2024
-- **Abrangência Geográfica:** 27 Unidades Federativas (26 Estados + Distrito Federal)
-- **Engine de Leitura Recomendada:** DuckDB (`read_parquet`) ou PyArrow
+- **Formato:** Apache Parquet
+- **Tamanho em Disco:** `235.485.013 bytes` (~224,6 MB)
+- **Total de Registros:** **5.310.738** transações de receitas eleitorais enriquecidas
+- **Abrangência Temporal:** Eleições de **2018, 2020, 2022 e 2024**
+- **Abrangência Geográfica:** 27 Unidades Federativas + `'BR'` (disputas presidenciais)
+- **Fontes Integradas:** Prestação de Contas e Resultados do **TSE** cruzados com o Quadro de Sócios e Administradores (**QSA / Receita Federal**)
+- **Origem de Download Automático:** Google Drive (`ID: 1CAUL7QTz587o0VpUkfhLBPn2EpMEHfwN`)
 
 ---
 
-## 📋 Tabela de Colunas e Especificações
+## 📋 Colunas Físicas do Parquet (24 Colunas)
 
-| Nome da Coluna | Tipo DuckDB / Arrow | Tipo Pandas | Descrição e Regra de Negócio | Exemplo |
-| :--- | :--- | :--- | :--- | :--- |
-| `ano` | `VARCHAR` | `str` / `object` | Ano da eleição tratado estritamente como string para preservar a natureza categórica do pleito (`'2018'`, `'2020'`, `'2022'`, `'2024'`). | `'2024'` |
-| `cpf_candidato` | `VARCHAR` | `str` / `object` | CPF do candidato padronizado com exatamente 11 dígitos numéricos (`LPAD`/`zfill(11)`), preservando zeros iniciais. | `'01234567890'` |
-| `nome_candidato` | `VARCHAR` | `str` / `object` | Nome de registro do candidato junto à Justiça Eleitoral, normalizado em letras maiúsculas e sem espaços sobressalentes. | `'MARIA SILVA SANTOS'` |
-| `cargo` | `VARCHAR` | `str` / `object` | Cargo disputado no pleito, normalizado em maiúsculas (ex: `PREFEITO`, `VEREADOR`, `DEPUTADO ESTADUAL`, `DEPUTADO FEDERAL`, `GOVERNADOR`, `SENADOR`, `PRESIDENTE`). | `'PREFEITO'` |
-| `sigla_partido` | `VARCHAR` | `str` / `object` | Sigla da agremiação partidária do candidato no pleito, em maiúsculas. | `'PL'`, `'PT'`, `'MDB'` |
-| `situacao` | `VARCHAR` | `str` / `object` | Situação final da candidatura no pleito, normalizada em minúsculas (`'eleito'`, `'não eleito'`, `'suplente'`). | `'eleito'` |
-| `uf_candidato` | `VARCHAR` | `str` / `object` | Sigla oficial da Unidade Federativa da candidatura (27 UFs). | `'SP'`, `'BA'`, `'RJ'` |
-| `municipio_candidato` | `VARCHAR` | `str` / `object` | Nome do município onde a eleição ocorreu. **Regra:** Preenchido para eleições municipais (2020 e 2024); mantido como `NULL` para eleições gerais estaduais/federais (2018 e 2022). | `'CAMPINA GRANDE'` |
-| `id_municipio_tse_candidato`| `VARCHAR` | `str` / `object` | Código oficial numérico do município atribuído pelo TSE. Preenchido apenas para eleições municipais. | `'05053'` |
-| `total_votos` | `BIGINT` | `int64` | Total consolidado de votos nominais válidos obtidos pelo candidato no pleito. Se repetido em múltiplas linhas de doação do mesmo candidato, deve ser consolidado por agregação (`max`). | `45230` |
-| `cpf_cnpj_doador` | `VARCHAR` | `str` / `object` | Número de identificação do doador (CPF de pessoa física, CNPJ de partido/candidato ou Fundo Eleitoral). | `'***.456.789-**'` |
-| `nome_doador` | `VARCHAR` | `str` / `object` | Razão social ou nome civil do doador registrado na prestação de contas. | `'DIRETORIO NACIONAL'` |
-| `sigla_uf_doador` | `VARCHAR` | `str` / `object` | Sigla do estado de origem do doador. | `'DF'`, `'SP'` |
-| `id_municipio_tse_doador` | `VARCHAR` | `str` / `object` | Código TSE do município de residência/sede do doador. | `'05053'` |
-| `valor_receita` | `DOUBLE` | `float64` | Valor financeiro nominal da doação/receita registrada na transação (em Reais - R$). Não pode conter truncamento de centavos. | `50000.00` |
-| `tipo_receita` | `VARCHAR` | `str` / `object` | Classificação categórica analítica da receita: `'Dinheiro Público'` (FEFC/Fundo Partidário), `'Financiamento Privado'` (Pessoas Físicas/Recursos Próprios), ou `'Repasse entre Aliados'`. | `'Dinheiro Público'` |
-| `autofinanciamento` | `TINYINT` | `int8` | Flag indicando se a doação é do próprio candidato (`1` se `cpf_candidato == cpf_cnpj_doador`, `0` caso contrário). | `1` |
-| `cnpj_basico` | `VARCHAR` | `str` / `object` | Raiz de 8 dígitos do CNPJ da empresa doadora ou fornecedora vinculada ao Quadro de Sócios e Administradores (QSA). `NULL` se não houver correlação societária. | `'12345678'` |
-| `valor_recebido_como_fornecedor` | `DOUBLE` | `float64` | Valor recebido como fornecedor pela empresa vinculada ao doador nesta campanha (chave para auditoria de conflito de interesses / Porta Giratória). | `15000.00` |
+| # | Nome da Coluna | Tipo DuckDB / Parquet | Descrição e Regra de Negócio |
+| :-: | :--- | :--- | :--- |
+| 1 | `ano` | `BIGINT` | Ano do pleito eleitoral (`2018`, `2020`, `2022` ou `2024`). |
+| 2 | `sequencial_candidato` | `VARCHAR` | Identificador único da candidatura atribuído pelo TSE em cada eleição/cargo. |
+| 3 | `cpf_candidato` | `VARCHAR` | CPF do candidato preservando zeros à esquerda (11 dígitos). Na `VIEW eleicoes`, recebe fallback para `sequencial_candidato` caso esteja vazio. |
+| 4 | `nome_candidato` | `VARCHAR` | Nome de urna oficial do candidato no TSE. |
+| 5 | `cargo` | `VARCHAR` | Cargo disputado, saneado e sem nulos (`PRESIDENTE`, `GOVERNADOR`, `SENADOR`, `DEPUTADO FEDERAL`, `DEPUTADO ESTADUAL`, `DEPUTADO DISTRITAL`, `PREFEITO`, `VEREADOR`). |
+| 6 | `sigla_partido` | `VARCHAR` | Sigla do partido político da candidatura no pleito. |
+| 7 | `situacao` | `VARCHAR` | Situação final da candidatura registrada pela Justiça Eleitoral. |
+| 8 | `uf_candidato` | `VARCHAR` | Sigla da UF da disputa eleitoral (`AC` a `TO`, ou `'BR'` para Presidente). |
+| 9 | `total_votos` | `BIGINT` | Total consolidado de votos nominais obtidos nas urnas pelo candidato na respectiva candidatura. Como a tabela está no grão transacional, agregações por candidato devem usar `MAX(total_votos)`. |
+| 10 | `valor_receita` | `DOUBLE` | Montante nominal (em R$) transferido na transação de receita. |
+| 11 | `origem_receita` | `VARCHAR` | Origem contábil da receita conforme prestação de contas no SPCE/TSE (ex.: Fundo Especial, Fundo Partidário, Recursos de Pessoas Físicas, Recursos Próprios, etc.). |
+| 12 | `fonte_receita` | `VARCHAR` | Classificação de fonte informada no SPCE/TSE (ex.: Fundo Partidário, Outros Recursos). |
+| 13 | `especie_receita` | `VARCHAR` | Modalidade/espécie do repasse (financeira, estimável em dinheiro, transferência eletrônica, etc.). |
+| 14 | `nome_doador` | `VARCHAR` | Razão social (quando fundo/órgão/partido) ou nome civil do doador registrado no TSE. |
+| 15 | `sigla_uf_doador` | `VARCHAR` | UF declarada pelo doador no TSE (frequentemente omissa para pessoas físicas devido a regras de privacidade/LGPD). |
+| 16 | `cpf_cnpj_doador` | `VARCHAR` | Documento identificador do doador (CPF ou CNPJ). |
+| 17 | `is_cpf` | `BOOLEAN` | `TRUE` se o doador é Pessoa Física (CPF); `FALSE` caso contrário. |
+| 18 | `autofinanciamento` | `BIGINT` | Indicador binário (`1` = doação do próprio candidato à sua campanha; `0` = recursos de terceiros/fundos). |
+| 19 | `cnpj_basico` | `VARCHAR` | Raiz cadastral de 8 dígitos do CNPJ da empresa vinculada ao doador na Receita Federal (`NULL` quando não há vínculo empresarial). |
+| 20 | `is_empresario` | `BOOLEAN` | **Feature PACD:** `TRUE` quando o doador Pessoa Física foi identificado como sócio, proprietário ou administrador de empresa ativa no QSA da Receita Federal. |
+| 21 | `is_eleito` | `BOOLEAN` | **Feature PACD:** `TRUE` se o candidato foi formalmente eleito no pleito segundo gabarito oficial do TSE. |
+| 22 | `razao_social` | `VARCHAR` | Nome empresarial oficial da companhia vinculada na Receita Federal. |
+| 23 | `setor_economico` | `VARCHAR` | Descrição da atividade econômica principal (CNAE / IBGE) da empresa vinculada. |
+| 24 | `uf_empresa` | `VARCHAR` | UF oficial da sede/matriz da empresa na Receita Federal (chave central para rastreamento de **Rotas de Influência Interestadual**). |
 
 ---
 
-## 🔍 Regras de Integridade e Validação
+## ⚙️ Colunas Derivadas na Camada DuckDB (`VIEW eleicoes`)
 
-1. **Unicidade de Candidatos:**
-   Para computar o número de candidaturas distintas, deve-se usar a chave composta `(cpf_candidato, ano, cargo)` ou `nunique('cpf_candidato')` no recorte temporal.
-2. **Consolidação de Votos:**
-   Como a tabela está no grão de transações de receita, somar a coluna `total_votos` diretamente duplica os votos de candidatos com múltiplos doadores. A agregação correta é agrupar por candidato e extrair o `max(total_votos)` antes de qualquer soma.
-3. **Anonimização LGPD:**
-   Em exibições públicas de doadores pessoas físicas, os 6 dígitos centrais do CPF devem ser mascarados (ex: `123.***.***-00`) para estrita conformidade com a Lei Geral de Proteção de Dados Pessoais.
+No startup do servidor em [api/main.py](../api/main.py), a view `eleicoes` expõe os dados aplicando:
+
+- **`valor_receita` (saneado):** Corrige dois erros extremos de digitação autodeclarados no SPCE/TSE:
+  - Transações do CNPJ `38121911000140` acima de R$ 200 milhões (AM/2020) ajustadas para `207.17`.
+  - Transação do CNPJ `16068108000156` igual a R$ 1.250.125.000,00 (Salvador/2024) ajustada para `1250.00`.
+- **`tipo_receita`:** Classificação em 3 categorias a partir de `origem_receita` e `autofinanciamento`:
+  - `'Financiamento Privado'` (`recursos de pessoas fisicas`, `recursos proprios`, `recursos de financiamento coletivo`, `doacoes pela internet`, `comercializacao de bens ou realizacao de eventos` ou `autofinanciamento = 1`);
+  - `'Repasse entre Aliados'` (`recursos de outros candidatos`);
+  - `'Dinheiro Público'` (demais origens, incluindo FEFC e Fundo Partidário).
+
+---
+
+## 🔍 Regras de Integridade e Unicidade
+
+1. **Blindagem de Candidatura:** Contagens e agregações por candidato utilizam a chave composta `(ano, cpf_candidato, cargo)` (ou `sequencial_candidato` no recorte global), evitando que o mesmo político disputando cargos ou eleições distintas tenha seus votos ou receitas mesclados.
+2. **Consolidação de Votos:** Em bases no grão de transação, votos nunca devem ser somados diretamente; agrega-se primeiro por candidatura usando `MAX(total_votos)`.
+3. **Resolução de Domicílio do Doador:** Na ausência de `sigla_uf_doador`, as consultas utilizam em cascata `uf_empresa`, a tabela materializada `sede_doadores` e regras de consistência federativa descritas na metodologia.

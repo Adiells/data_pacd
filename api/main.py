@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from src.data_loader import garantir_parquet_local
 from src.metrics import calcular_sucesso_decil
 
 logger = logging.getLogger("pacd_api")
@@ -59,6 +60,9 @@ def serve_spa():
         },
     )
 
+
+# Garante existência e integridade binária da base Parquet (auto-download via Google Drive se ausente/corrompido)
+garantir_parquet_local(BASE_PARQUET_PATH)
 
 # Conexão DuckDB compartilhada em memória apontando para o arquivo parquet
 conn = duckdb.connect(database=":memory:")

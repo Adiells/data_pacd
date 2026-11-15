@@ -1,110 +1,83 @@
 # 🚀 Guia de Execução e Reproducibilidade
 
-> 🌐 **Plataforma Online em Produção:** Acesse diretamente em [**https://observatorioeleitoral.streamlit.app/**](https://observatorioeleitoral.streamlit.app/)
-
-Este guia passo a passo explica como acessar a versão em produção, configurar o ambiente local, executar os scripts de ingestão de dados, rodar a suíte de testes e iniciar a aplicação web.
+Este guia descreve como configurar o ambiente, inicializar a base de dados automaticamente via Google Drive e executar o painel **PACD** localmente.
 
 ---
 
 ## 💻 1. Pré-requisitos
 
-- **Python:** Versão 3.10, 3.11, 3.12 ou superior
-- **Gerenciador de Ambientes:** `venv` ou `uv`
-- **Espaço em Disco:** ~250 MB livres (para os CSVs brutos e base Parquet)
+- **Python:** Versão `3.10` ou superior.
+- **Gerenciador de Ambientes:** `venv` ou `uv`.
+- **Espaço em Disco:** ~250 MB livres para o arquivo `base_consolidada_eleicoes.parquet`.
+- **Acesso à Internet (apenas na 1ª execução):** Necessário para o download automático do arquivo `.parquet` consolidado a partir do Google Drive.
 
 ---
 
 ## 📦 2. Instalação do Ambiente
 
-Clone o repositório ou navegue até o diretório do projeto:
+No diretório `data_pacd/`, crie e ative o ambiente virtual e instale as dependências enxutas da aplicação:
 
-```bash
-cd /home/adiel/Projects/pacd
+### Windows (PowerShell)
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-Crie e ative um ambiente virtual:
-
+### Linux / macOS
 ```bash
-# Utilizando venv padrão
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Ou utilizando uv (mais rápido)
-uv venv
-source .venv/bin/activate
-```
-
-Instale as dependências:
-
-```bash
 pip install -r requirements.txt
 ```
 
 ---
 
-## 📥 3. Pipeline de Dados (Download e Consolidação)
+## 📥 3. Ingestão Automática da Base Parquet
 
-### Passo 3.1: Download das 27 UFs do Google Drive (Opcional se já baixado)
-Para baixar os CSVs brutos de todos os 27 estados da pasta oficial do Google Drive de forma paralela (multithreaded):
+**Não é necessário baixar CSVs nem rodar scripts de conversão manual.**
 
-```bash
-.venv/bin/python scripts/download_all_states.py
-```
-*Os arquivos são organizados na estrutura de subpastas por estado `data/raw/{UF}/1_doacoes_empresas_{UF}.csv` (espelhando a pasta `raw/` do Google Drive) ou no diretório `data/raw/estados/`.*
-
-### Passo 3.2: Consolidação em Parquet Canônico via DuckDB
-Para consolidar os 27 CSVs brutos na base analítica única `data/processed/base_consolidada_eleicoes.parquet` em ~2 segundos:
-
-```bash
-.venv/bin/python scripts/convert_csv_to_parquet.py
-```
-
-Você verá a saída indicando:
-```text
-[INFO] Processando 27 arquivos CSV estaduais...
-[INFO] Base consolidada gravada com sucesso em 'data/processed/base_consolidada_eleicoes.parquet'
-[INFO] Total de registros consolidados: 959.770 (Tamanho: 42.13 MB)
-```
+Ao iniciar a API (ou chamar `carregar_dados()` / `garantir_parquet_local()` em [src/data_loader.py](../src/data_loader.py)):
+1. O sistema verifica `data/processed/base_consolidada_eleicoes.parquet`.
+2. Se o arquivo estiver ausente, tiver menos de `1 MB` (caso comum de ponteiro Git LFS corrompido) ou falhar na checagem binária dos *magic bytes* `PAR1`, o módulo executa o download automático direto do Google Drive (`ID: 1CAUL7QTz587o0VpUkfhLBPn2EpMEHfwN`, ~224,6 MB) com gravação atômica.
+3. Caso queira apontar para outro espelho no Google Drive sem alterar o código, basta definir a variável de ambiente:
+   ```bash
+   export PACD_PARQUET_DRIVE_ID="SEU_FILE_ID_AQUI"
+   ```
+4. A partir da segunda execução, a validação leva menos de 1 ms e o carregamento inicia imediatamente.
 
 ---
 
 ## 🌐 4. Iniciar a Aplicação Web (FastAPI + SPA)
 
-Para iniciar o servidor backend e servir a Single-Page Application:
+Com o ambiente virtual ativado dentro de `data_pacd/`:
 
 ```bash
-.venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-A aplicação estará disponível no navegador no endereço:  
-**`http://localhost:8000`**
-
-- **Health Check da API:** `http://localhost:8000/health`
+Após o log indicando inicialização do servidor, acesse no navegador:
+- **Painel SPA:** `http://localhost:8000/`
 - **Documentação Interativa (Swagger/OpenAPI):** `http://localhost:8000/docs`
+- **Health Check:** `http://localhost:8000/health`
 
-### Dicas de Navegação na SPA:
-- **Bloco Global Fixo ("Tudo e Todos"):** O topo exibe os 4 KPIs macro e 4 gráficos analíticos consolidados de toda a base histórica (2018 a 2024), imunes aos filtros.
-- **Barra de Filtros:** Container de alto contraste para seleção de Ano, Cargo, Partido, UF e Município com travas eleitorais estritas.
-- **Visualização "1 por vez" (Tabs / Segmented Control):**
-  1. `Visão Geral`: Indicadores anuais, Top Doadores, Maiores Candidatos, Distribuição de Receitas (Log) e Ranking Federativo (Top Estados).
-  2. `Custo do Voto`: Dispersão Votos vs. Receita com Piso de Viabilidade (requer 1 Ano e 1 Cargo específico).
-  3. `Porta Giratória`: Auditoria de empresas e sócios doadores que faturam como fornecedores, higienizados com malha fina textual via Regex.
-  4. `Origem e Autofinanciamento`: Comparativo entre doações públicas/privadas, autofinanciamento e taxas reais de sucesso eleitoral.
+### Navegação Principal na SPA
+- **Interruptor Global (Cabeçalho):** Alterna todo o painel entre `Todos os Recursos`, `Somente Doações` e `Elite Empresarial`.
+- **Bloco Fixo Global ("Tudo e Todos"):** Exibe os 4 KPIs históricos (2018–2024) e rankings globais imunes aos filtros.
+- **Barra de Filtros Dinâmicos:** Controle por Ano/Ciclo, Cargo, UF (múltipla seleção / regiões) e Partido (múltipla seleção com busca).
+- **5 Abas Analíticas:**
+  1. `Visão Geral`
+  2. `Análise Geográfica & Fluxo de Recursos`
+  3. `Custo do Voto` *(exige selecionar 1 Cargo específico)*
+  4. `Teia Empresarial & Setores`
+  5. `Origem dos Recursos & Autofinanciamento`
 
 ---
 
 ## 🧪 5. Execução dos Testes Automatizados
 
-A plataforma conta com uma suíte de 18 testes automatizados cobrindo pipeline, tipagem, integridade de votos, cálculos estatísticos, malha geográfica e conformidade de design.
-
-Para executar todos os testes:
+Para rodar toda a suíte de testes de integridade do `.parquet`, métricas e endpoints da API:
 
 ```bash
-.venv/bin/python -m unittest discover tests
-```
-
-Saída esperada:
-```text
-Ran 18 tests in ~3.0s
-OK
+python -m unittest discover -s tests -v
 ```

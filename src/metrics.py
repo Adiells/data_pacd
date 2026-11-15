@@ -1,8 +1,8 @@
 """Módulo de métricas e análises financeiras de campanhas eleitorais.
 
 Fornece funções analíticas de alta precisão para cálculo de custo por voto,
-identificação de efeito porta giratória (doador-fornecedor), análise de fluxo
-geográfico de receitas e correlação com sucesso eleitoral.
+análise de fluxo geográfico de receitas, concentração de recursos e correlação
+com sucesso eleitoral.
 """
 
 from __future__ import annotations
@@ -163,76 +163,6 @@ def calcular_custo_voto(df: pd.DataFrame) -> pd.DataFrame:
     agrupado["total_receita"] = agrupado["total_receita"].astype("float64")
 
     return agrupado.reset_index(drop=True)
-
-
-def identificar_porta_giratoria(df: pd.DataFrame) -> pd.DataFrame:
-    """Filtra registros de porta giratória onde um doador também atuou como fornecedor.
-
-    Filtra registros onde `valor_recebido_como_fornecedor > 0` e calcula a taxa de retorno:
-    taxa_retorno = (valor_recebido_como_fornecedor / valor_receita) * 100.
-
-    Trata casos onde `valor_receita <= 0` atribuindo taxa de retorno igual a 0.0.
-
-    Args:
-        df: DataFrame contendo dados de doações e repasses a fornecedores.
-
-    Returns:
-        pd.DataFrame: Subconjunto de registros com a coluna adicional 'taxa_retorno',
-                      ordenado decrescentemente pela taxa calculada.
-
-    Raises:
-        TypeError: Se df não for uma instância de pandas DataFrame.
-        KeyError: Se as colunas 'valor_recebido_como_fornecedor' ou 'valor_receita'
-                  não existirem no DataFrame.
-    """
-    if not isinstance(df, pd.DataFrame):
-        raise TypeError(f"Esperado pd.DataFrame, recebido {type(df).__name__}")
-
-    colunas_obrigatorias = ["valor_recebido_como_fornecedor", "valor_receita"]
-    colunas_faltantes = [col for col in colunas_obrigatorias if col not in df.columns]
-    if colunas_faltantes:
-        raise KeyError(
-            f"Colunas obrigatórias ausentes para análise de porta giratória: {colunas_faltantes}"
-        )
-
-    if df.empty:
-        df_vazio = df.copy()
-        df_vazio["taxa_retorno"] = pd.Series(dtype="float64")
-        return df_vazio
-
-    # Higienização via Regex: Remove institucional (partido/órgão) e repasse de aliados (eleição/campanha)
-    df_limpo = filtrar_entidades_particulares(df, "nome_doador")
-    if "nome_fornecedor" in df_limpo.columns:
-        df_limpo = filtrar_entidades_particulares(df_limpo, "nome_fornecedor")
-
-    # Conversão segura para numérico antes do filtro
-    fornecedor_num = pd.to_numeric(
-        df_limpo["valor_recebido_como_fornecedor"], errors="coerce"
-    ).fillna(0.0)
-    mascara_fornecedor = fornecedor_num > 0
-
-    df_filtrado = df_limpo[mascara_fornecedor].copy()
-
-    if df_filtrado.empty:
-        df_filtrado["taxa_retorno"] = pd.Series(dtype="float64")
-        return df_filtrado
-
-    receita_num = pd.to_numeric(
-        df_filtrado["valor_receita"], errors="coerce"
-    ).fillna(0.0)
-    fornecedor_filtrado = pd.to_numeric(
-        df_filtrado["valor_recebido_como_fornecedor"], errors="coerce"
-    ).fillna(0.0)
-
-    # Tratamento seguro para divisão por receita nula ou zerada
-    mascara_receita_valida = receita_num > 0
-    df_filtrado["taxa_retorno"] = np.where(
-        mascara_receita_valida,
-        (fornecedor_filtrado / receita_num) * 100.0,
-        0.0,
-    ).astype("float64")
-
-    return df_filtrado.sort_values(by="taxa_retorno", ascending=False).reset_index(drop=True)
 
 
 def analise_fluxo_geografico(df: pd.DataFrame, uf_candidato: str = "PB") -> Dict[str, Any]:

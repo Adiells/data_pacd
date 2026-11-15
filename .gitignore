@@ -23,7 +23,6 @@ htmlcov/
 # Logs e arquivos de execução local
 *.log
 
-
 # Variáveis de ambiente e segredos
 .env
 .env.local
@@ -38,11 +37,10 @@ htmlcov/
 *.sqlite
 *.sqlite3
 
-# Dados brutos (manter pastas com .gitkeep se desejar)
-data/raw/*
-!data/raw/.gitkeep
+# Base consolidada local (ingerida automaticamente via Google Drive na 1a execução)
 data/processed/*
 !data/processed/.gitkeep
+*.parquet
 
 # Arquivos de dados pesados / temporários
 *.csv
@@ -52,10 +50,6 @@ data/processed/*
 *.zip
 *.tar.gz
 *.rar
-
-# Dados processados (descomente abaixo se não quiser versionar os arquivos parquet gerados)
-# data/processed/*
-# !data/processed/.gitkeep
 
 # IDEs e editores de texto
 .vscode/
@@ -68,5 +62,5 @@ data/processed/*
 .DS_Store
 Thumbs.db
 
-# Maestri workspace state
+# Estado local de workspace
 .maestri/
